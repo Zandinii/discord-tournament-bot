@@ -249,6 +249,111 @@ def create_bracket_embed(tournament, matches: list, current_round: int = 1) -> d
     
     return embed
 
+def create_map_ban_embed(
+    match_id: int,
+    bo_format: int,
+    available_maps: list,
+    banned_maps: list,
+    current_banner_id: int,
+    bans_done: int,
+    total_bans: int
+) -> discord.Embed:
+    """Skapa map ban embed"""
+    
+    embed = discord.Embed(
+        title=f"🗺️ Map Ban Phase - Match {match_id}",
+        description=f"**Best of {bo_format}**\n\n"
+                   f"Bans: {bans_done}/{total_bans}",
+        color=discord.Color.orange(),
+        timestamp=datetime.utcnow()
+    )
+    
+    # Tillgängliga kartor
+    if available_maps:
+        embed.add_field(
+            name="📋 Tillgängliga Kartor",
+            value="\n".join([f"✅ {m}" for m in available_maps]),
+            inline=False
+        )
+    
+    # Bannade kartor
+    if banned_maps:
+        banned_text = "\n".join([
+            f"🚫 {b['map']} (Ban #{b['order']})" 
+            for b in banned_maps
+        ])
+        embed.add_field(
+            name="🚫 Bannade Kartor",
+            value=banned_text,
+            inline=False
+        )
+    else:
+        embed.add_field(
+            name="🚫 Bannade Kartor",
+            value="*Inga bans än*",
+            inline=False
+        )
+    
+    # Vems tur
+    if bans_done < total_bans:
+        embed.add_field(
+            name="⏳ Väntar på",
+            value=f"<@{current_banner_id}> - 30 sekunder",
+            inline=False
+        )
+    
+    embed.set_footer(text=f"Match ID: {match_id} | Endast lagkaptener kan banna")
+    
+    return embed
+
+def create_map_ban_complete_embed(
+    match_id: int,
+    bo_format: int,
+    maps_to_play: list,
+    participant1_id: int,
+    participant2_id: int
+) -> discord.Embed:
+    """Skapa embed när map bans är klara"""
+    
+    embed = discord.Embed(
+        title="✅ Map Ban Phase Klar!",
+        description=f"**Best of {bo_format}**",
+        color=discord.Color.green(),
+        timestamp=datetime.utcnow()
+    )
+    
+    # Visa kartor som ska spelas
+    maps_text = ""
+    for i, map_info in enumerate(maps_to_play, 1):
+        maps_text += f"**Map {i}:** {map_info['map']}\n"
+        maps_text += f"├ <@{participant1_id}>: {map_info['side_p1']}\n"
+        maps_text += f"└ <@{participant2_id}>: {map_info['side_p2']}\n\n"
+    
+    embed.add_field(
+        name="🗺️ Kartor att Spela",
+        value=maps_text,
+        inline=False
+    )
+    
+    embed.set_footer(text="Lycka till! Rapportera resultat med /report-win när ni är klara.")
+    
+    return embed
+
+def create_map_ban_timeout_embed(
+    banner_id: int,
+    map_name: str
+) -> discord.Embed:
+    """Skapa embed för timeout"""
+    
+    embed = discord.Embed(
+        title="⏰ Timeout!",
+        description=f"<@{banner_id}> fick timeout!\n\n**{map_name}** bannades automatiskt.",
+        color=discord.Color.orange(),
+        timestamp=datetime.utcnow()
+    )
+    
+    return embed
+
 def create_error_embed(message: str) -> discord.Embed:
     """Skapa error embed"""
     embed = discord.Embed(

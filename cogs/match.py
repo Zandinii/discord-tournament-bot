@@ -15,6 +15,8 @@ from utils.elo import calculate_elo, elo_change_description
 from utils.bracket import advance_winner, get_tournament_winner
 from sqlalchemy import select, and_, or_
 import logging
+import random
+import asyncio
 
 logger = logging.getLogger('TournamentBot.Match')
 
@@ -152,6 +154,31 @@ class MapBanView(discord.ui.View):
     async def update_embeds(self):
         """Uppdatera båda embed-meddelandena"""
         
+        from utils.embeds import create_map_ban_embed
+        
+        embed = create_map_ban_embed(
+            match_id=self.match_id,
+            bo_format=self.maps_to_keep,
+            available_maps=self.available_maps,
+            banned_maps=self.banned_maps,
+            current_banner_id=self.current_banner,
+            bans_done=self.bans_done,
+            total_bans=self.total_bans_needed
+        )
+        
+        # Uppdatera knappar
+        self.create_buttons()
+        
+        # Uppdatera båda meddelanden
+        try:
+            if self.message1:
+                await self.message1.edit(embed=embed, view=self)
+            if self.message2:
+                await self.message2.edit(embed=embed, view=self)
+        except Exception as e:
+            logger.error(f'Fel vid uppdatering av embeds: {e}')
+        
+        """Uppdatera båda embed-meddelandena"""
         embed = discord.Embed(
             title=f"🗺️ Map Ban Phase - Match {self.match_id}",
             description=f"**Best of {self.maps_to_keep}**\n\n"
@@ -295,28 +322,16 @@ class MapBanView(discord.ui.View):
             match.ban_phase_complete = True
             await session.commit()
         
-        # Skapa final embed
-        final_embed = discord.Embed(
-            title="✅ Map Ban Phase Klar!",
-            description=f"**Best of {self.maps_to_keep}**",
-            color=discord.Color.green(),
-            timestamp=datetime.utcnow()
+        # Skapa final embed med ny funktion
+        from utils.embeds import create_map_ban_complete_embed
+        
+        final_embed = create_map_ban_complete_embed(
+            match_id=self.match_id,
+            bo_format=self.maps_to_keep,
+            maps_to_play=maps_to_play,
+            participant1_id=self.participant1_id,
+            participant2_id=self.participant2_id
         )
-        
-        # Visa kartor som ska spelas
-        maps_text = ""
-        for i, map_info in enumerate(maps_to_play, 1):
-            maps_text += f"**Map {i}:** {map_info['map']}\n"
-            maps_text += f"├ <@{self.participant1_id}>: {map_info['side_p1']}\n"
-            maps_text += f"└ <@{self.participant2_id}>: {map_info['side_p2']}\n\n"
-        
-        final_embed.add_field(
-            name="🗺️ Kartor att Spela",
-            value=maps_text,
-            inline=False
-        )
-        
-        final_embed.set_footer(text="Lycka till! Rapportera resultat med /report-win när ni är klara.")
         
         # Skicka till båda channels
         if self.team1_text_channel:
