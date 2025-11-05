@@ -3,6 +3,28 @@ from typing import List, Tuple, Optional
 from database.models import Match, TournamentParticipant, MatchStatus
 import random
 
+async def get_participant_name(session, participant_id: int, participant_type) -> str:
+    """Hämta namn för en deltagare (user eller team)"""
+    from database.models import Player, Team, ParticipantType
+    
+    if participant_type == ParticipantType.TEAM:
+        team = await session.get(Team, participant_id)
+        return team.name if team else f"Team {participant_id}"
+    else:
+        player = await session.get(Player, participant_id)
+        return player.username if player else f"Spelare {participant_id}"
+
+async def get_participant_elo(session, participant_id: int, participant_type) -> int:
+    """Hämta ELO för en deltagare (user eller team)"""
+    from database.models import Player, Team, ParticipantType
+    
+    if participant_type == ParticipantType.TEAM:
+        team = await session.get(Team, participant_id)
+        return team.elo_rating if team else 1000
+    else:
+        player = await session.get(Player, participant_id)
+        return player.elo_rating if player else 1000
+
 def generate_single_elimination(tournament_id: int, participants: List[TournamentParticipant]) -> List[Match]:
     """
     Generera single elimination bracket.
@@ -119,6 +141,20 @@ def seed_participants(participants: List[TournamentParticipant], method: str = '
     else:  # default elo - för nu använder vi signup ordning
         # TODO: Implementera ELO-baserad seeding när vi har Player relations
         return sorted(participants, key=lambda p: p.signup_time)
+    
+async def seed_participants_by_elo(session, participants: List[TournamentParticipant]) -> List[TournamentParticipant]:
+    """Seed deltagare baserat på ELO"""
+    # Skapa lista med (participant, elo)
+    participant_elos = []
+    
+    for p in participants:
+        elo = await get_participant_elo(session, p.participant_id, p.participant_type)
+        participant_elos.append((p, elo))
+    
+    # Sortera efter ELO (högst först)
+    participant_elos.sort(key=lambda x: x[1], reverse=True)
+    
+    return [p[0] for p in participant_elos]
 
 def advance_winner(matches: List[Match], completed_match: Match, winner_id: int) -> Optional[Match]:
     """

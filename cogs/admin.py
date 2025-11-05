@@ -3,6 +3,7 @@ from discord import app_commands
 from discord.ext import commands
 from typing import Literal, Optional
 from datetime import datetime, timedelta
+from sqlalchemy import select
 from database.database import async_session
 from database.models import Tournament, TournamentStatus, Guild
 from utils.embeds import create_tournament_announcement, create_success_embed, create_error_embed
@@ -120,7 +121,7 @@ class SignupView(discord.ui.View):
     
     @discord.ui.button(label='Anmäl dig ✅', style=discord.ButtonStyle.green, custom_id='signup_button')
     async def signup_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        from database.models import TournamentParticipant, ParticipantType, Player
+        from database.models import TournamentParticipant, ParticipantType, Player, Team, TeamMember
         
         async with async_session() as session:
             try:
@@ -142,72 +143,162 @@ class SignupView(discord.ui.View):
                     )
                     return
                 
-                # Kolla om redan anmäld
-                from sqlalchemy import select
-                existing = await session.execute(
-                    select(TournamentParticipant).where(
-                        TournamentParticipant.tournament_id == self.tournament_id,
-                        TournamentParticipant.participant_id == interaction.user.id,
-                        TournamentParticipant.participant_type == ParticipantType.USER
+                # Bestäm om detta är en team-turnering (5v5 eller 2v2)
+                is_team_tournament = tournament.game_mode in ['2v2', '5v5']
+                
+                if is_team_tournament:
+                    # Team signup
+                    # Hitta användarens lag
+                    team_result = await session.execute(
+                        select(Team).join(
+                            TeamMember, Team.id == TeamMember.team_id
+                        ).where(
+                            TeamMember.user_id == interaction.user.id,
+                            Team.guild_id == interaction.guild_id
+                        )
                     )
-                )
-                if existing.scalar_one_or_none():
+                    team = team_result.scalar_one_or_none()
+                    
+                    if not team:
+                        await interaction.response.send_message(
+                            embed=create_error_embed('Du måste vara i ett lag för att anmäla dig till denna turnering!\n\nAnvänd `/team-create` för att skapa ett lag.'),
+                            ephemeral=True
+                        )
+                        return
+                    
+                    # Kolla om användaren är captain
+                    if team.captain_id != interaction.user.id:
+                        await interaction.response.send_message(
+                            embed=create_error_embed('Endast captain kan anmäla laget till turneringar!'),
+                            ephemeral=True
+                        )
+                        return
+                    
+                    # Kolla om laget redan är anmält
+                    existing = await session.execute(
+                        select(TournamentParticipant).where(
+                            TournamentParticipant.tournament_id == self.tournament_id,
+                            TournamentParticipant.participant_id == team.id,
+                            TournamentParticipant.participant_type == ParticipantType.TEAM
+                        )
+                    )
+                    if existing.scalar_one_or_none():
+                        await interaction.response.send_message(
+                            embed=create_error_embed('Ditt lag är redan anmält till denna turnering!'),
+                            ephemeral=True
+                        )
+                        return
+                    
+                    # Kolla max deltagare
+                    participants_count = await session.execute(
+                        select(TournamentParticipant).where(
+                            TournamentParticipant.tournament_id == self.tournament_id
+                        )
+                    )
+                    current_count = len(participants_count.scalars().all())
+                    
+                    if current_count >= tournament.max_participants:
+                        await interaction.response.send_message(
+                            embed=create_error_embed('Turneringen är full!'),
+                            ephemeral=True
+                        )
+                        return
+                    
+                    # Anmäl lag
+                    participant = TournamentParticipant(
+                        tournament_id=self.tournament_id,
+                        participant_id=team.id,
+                        participant_type=ParticipantType.TEAM
+                    )
+                    session.add(participant)
+                    await session.commit()
+                    
+                    # Uppdatera announcement embed
+                    new_count = current_count + 1
+                    embed = create_tournament_announcement(tournament, participant_count=new_count)
+                    
+                    try:
+                        message = await interaction.channel.fetch_message(tournament.announcement_message_id)
+                        await message.edit(embed=embed)
+                    except:
+                        pass
+                    
                     await interaction.response.send_message(
-                        embed=create_error_embed('Du är redan anmäld till denna turnering!'),
+                        embed=create_success_embed(f'✅ Lag **{team.name}** är nu anmält till **{tournament.name}**!\n\nStarttid: <t:{int(tournament.start_time.timestamp())}:F>'),
                         ephemeral=True
                     )
-                    return
-                
-                # Kolla max deltagare
-                participants_count = await session.execute(
-                    select(TournamentParticipant).where(
-                        TournamentParticipant.tournament_id == self.tournament_id
+                    
+                    logger.info(f'Lag {team.name} anmälde sig till turnering {tournament.id}')
+                    
+                else:
+                    # Individual signup (1v1)
+                    # Kolla om redan anmäld
+                    existing = await session.execute(
+                        select(TournamentParticipant).where(
+                            TournamentParticipant.tournament_id == self.tournament_id,
+                            TournamentParticipant.participant_id == interaction.user.id,
+                            TournamentParticipant.participant_type == ParticipantType.USER
+                        )
                     )
-                )
-                current_count = len(participants_count.scalars().all())
-                
-                if current_count >= tournament.max_participants:
+                    if existing.scalar_one_or_none():
+                        await interaction.response.send_message(
+                            embed=create_error_embed('Du är redan anmäld till denna turnering!'),
+                            ephemeral=True
+                        )
+                        return
+                    
+                    # Kolla max deltagare
+                    participants_count = await session.execute(
+                        select(TournamentParticipant).where(
+                            TournamentParticipant.tournament_id == self.tournament_id
+                        )
+                    )
+                    current_count = len(participants_count.scalars().all())
+                    
+                    if current_count >= tournament.max_participants:
+                        await interaction.response.send_message(
+                            embed=create_error_embed('Turneringen är full!'),
+                            ephemeral=True
+                        )
+                        return
+                    
+                    # Skapa/uppdatera spelarprofil
+                    player = await session.get(Player, interaction.user.id)
+                    if not player:
+                        player = Player(
+                            user_id=interaction.user.id,
+                            guild_id=interaction.guild_id,
+                            username=interaction.user.name
+                        )
+                        session.add(player)
+                    else:
+                        player.username = interaction.user.name
+                    
+                    # Lägg till participant
+                    participant = TournamentParticipant(
+                        tournament_id=self.tournament_id,
+                        participant_id=interaction.user.id,
+                        participant_type=ParticipantType.USER
+                    )
+                    session.add(participant)
+                    await session.commit()
+                    
+                    # Uppdatera announcement embed
+                    new_count = current_count + 1
+                    embed = create_tournament_announcement(tournament, participant_count=new_count)
+                    
+                    try:
+                        message = await interaction.channel.fetch_message(tournament.announcement_message_id)
+                        await message.edit(embed=embed)
+                    except:
+                        pass
+                    
                     await interaction.response.send_message(
-                        embed=create_error_embed('Turneringen är full!'),
+                        embed=create_success_embed(f'✅ Du är nu anmäld till **{tournament.name}**!\n\nStarttid: <t:{int(tournament.start_time.timestamp())}:F>'),
                         ephemeral=True
                     )
-                    return
-                
-                # Skapa/uppdatera spelarprofil
-                player = await session.get(Player, interaction.user.id)
-                if not player:
-                    player = Player(
-                        user_id=interaction.user.id,
-                        guild_id=interaction.guild_id,
-                        username=interaction.user.name
-                    )
-                    session.add(player)
-                
-                # Lägg till participant
-                participant = TournamentParticipant(
-                    tournament_id=self.tournament_id,
-                    participant_id=interaction.user.id,
-                    participant_type=ParticipantType.USER
-                )
-                session.add(participant)
-                await session.commit()
-                
-                # Uppdatera announcement embed
-                new_count = current_count + 1
-                embed = create_tournament_announcement(tournament, participant_count=new_count)
-                
-                try:
-                    message = await interaction.channel.fetch_message(tournament.announcement_message_id)
-                    await message.edit(embed=embed)
-                except:
-                    pass  # Om meddelandet inte hittas, fortsätt ändå
-                
-                await interaction.response.send_message(
-                    embed=create_success_embed(f'✅ Du är nu anmäld till **{tournament.name}**!\n\nStarttid: <t:{int(tournament.start_time.timestamp())}:F>'),
-                    ephemeral=True
-                )
-                
-                logger.info(f'{interaction.user.name} anmälde sig till turnering {tournament.id}')
+                    
+                    logger.info(f'{interaction.user.name} anmälde sig till turnering {tournament.id}')
                 
             except Exception as e:
                 logger.error(f'Fel vid anmälan: {e}', exc_info=True)
@@ -215,7 +306,7 @@ class SignupView(discord.ui.View):
                     embed=create_error_embed(f'Kunde inte anmäla dig: {str(e)}'),
                     ephemeral=True
                 )
-    
+
     @discord.ui.button(label='Dra dig ur ❌', style=discord.ButtonStyle.red, custom_id='withdraw_button')
     async def withdraw_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         from database.models import TournamentParticipant, ParticipantType

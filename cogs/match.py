@@ -91,33 +91,67 @@ class MatchResultView(discord.ui.View):
                 match.status = MatchStatus.COMPLETED
                 match.completed_at = datetime.utcnow()
                 
-                # Hämta spelare
-                winner = await session.get(Player, self.winner_id)
-                loser_id = match.participant1_id if self.winner_id == match.participant2_id else match.participant2_id
-                loser = await session.get(Player, loser_id)
+                # Hämta spelare/teams
+                from database.models import Team
                 
-                if winner and loser:
-                    # Beräkna nya ELO ratings
-                    new_winner_elo, new_loser_elo = calculate_elo(
-                        winner.elo_rating, 
-                        loser.elo_rating, 
-                        winner.total_matches
-                    )
+                # Kolla om detta är en team-match
+                tournament = await session.get(Tournament, match.tournament_id)
+                is_team_tournament = tournament.game_mode in ['2v2', '5v5']
+                
+                if is_team_tournament:
+                    # Team match - uppdatera team ELO
+                    winner_team = await session.get(Team, self.winner_id)
+                    loser_id = match.participant1_id if self.winner_id == match.participant2_id else match.participant2_id
+                    loser_team = await session.get(Team, loser_id)
                     
-                    # Uppdatera statistik
-                    winner.elo_rating = new_winner_elo
-                    winner.total_matches += 1
-                    winner.total_wins += 1
-                    
-                    loser.elo_rating = new_loser_elo
-                    loser.total_matches += 1
-                    loser.total_losses += 1
-                    
-                    elo_text = f"\n\n**ELO Ändringar:**\n"
-                    elo_text += f"🏆 <@{winner.user_id}>: {elo_change_description(winner.elo_rating - (new_winner_elo - winner.elo_rating), new_winner_elo)}\n"
-                    elo_text += f"💔 <@{loser.user_id}>: {elo_change_description(loser.elo_rating - (new_loser_elo - loser.elo_rating), new_loser_elo)}"
+                    if winner_team and loser_team:
+                        # Beräkna nya ELO ratings
+                        new_winner_elo, new_loser_elo = calculate_elo(
+                            winner_team.elo_rating,
+                            loser_team.elo_rating,
+                            winner_team.total_wins + winner_team.total_losses
+                        )
+                        
+                        # Uppdatera statistik
+                        winner_team.elo_rating = new_winner_elo
+                        winner_team.total_wins += 1
+                        
+                        loser_team.elo_rating = new_loser_elo
+                        loser_team.total_losses += 1
+                        
+                        elo_text = f"\n\n**ELO Ändringar:**\n"
+                        elo_text += f"🏆 **{winner_team.name}**: {elo_change_description(winner_team.elo_rating - (new_winner_elo - winner_team.elo_rating), new_winner_elo)}\n"
+                        elo_text += f"💔 **{loser_team.name}**: {elo_change_description(loser_team.elo_rating - (new_loser_elo - loser_team.elo_rating), new_loser_elo)}"
+                    else:
+                        elo_text = ""
                 else:
-                    elo_text = ""
+                    # Individual match - uppdatera spelare ELO
+                    winner = await session.get(Player, self.winner_id)
+                    loser_id = match.participant1_id if self.winner_id == match.participant2_id else match.participant2_id
+                    loser = await session.get(Player, loser_id)
+                    
+                    if winner and loser:
+                        # Beräkna nya ELO ratings
+                        new_winner_elo, new_loser_elo = calculate_elo(
+                            winner.elo_rating, 
+                            loser.elo_rating, 
+                            winner.total_matches
+                        )
+                        
+                        # Uppdatera statistik
+                        winner.elo_rating = new_winner_elo
+                        winner.total_matches += 1
+                        winner.total_wins += 1
+                        
+                        loser.elo_rating = new_loser_elo
+                        loser.total_matches += 1
+                        loser.total_losses += 1
+                        
+                        elo_text = f"\n\n**ELO Ändringar:**\n"
+                        elo_text += f"🏆 <@{winner.user_id}>: {elo_change_description(winner.elo_rating - (new_winner_elo - winner.elo_rating), new_winner_elo)}\n"
+                        elo_text += f"💔 <@{loser.user_id}>: {elo_change_description(loser.elo_rating - (new_loser_elo - loser.elo_rating), new_loser_elo)}"
+                    else:
+                        elo_text = ""
                 
                 # Hantera nästa match i bracket (om single elimination)
                 tournament = await session.get(Tournament, match.tournament_id)
