@@ -156,7 +156,134 @@ class VoiceCog(commands.Cog):
         except Exception as e:
             logger.error(f'Fel vid flyttning av spelare: {e}', exc_info=True)
             return moved_team1, moved_team2
-    
+        
+    async def start_map_ban_phase(
+    self,
+    guild: discord.Guild,
+    match: Match,
+    tournament: Tournament,
+    team1_channel: discord.VoiceChannel,
+    team2_channel: discord.VoiceChannel
+):
+        """
+        Starta map ban-fasen för en match.
+        """
+        try:
+            # Kolla om map pool finns
+            if not tournament.map_pool:
+                logger.info(f'Ingen map pool för turnering {tournament.id}, skippar ban phase')
+                return
+            
+            # Parse map pool
+            import json
+            try:
+                maps = [m.strip() for m in tournament.map_pool.split(',')]
+            except:
+                logger.warning(f'Kunde inte parse map pool för turnering {tournament.id}')
+                return
+            
+            if len(maps) < 2:
+                logger.info(f'För få kartor i poolen för ban phase')
+                return
+            
+            # Bestäm vilket round vi är i (groupstage vs playoffs)
+            # För enkelhetens skull: round 1-2 = groupstage, 3+ = playoffs
+            bo_format = tournament.bo_format_groupstage if match.round_number <= 2 else tournament.bo_format_playoffs
+            
+            # Beräkna antal bans som behövs
+            maps_needed = bo_format  # 1 för BO1, 3 för BO3
+            total_bans = len(maps) - maps_needed
+            
+            if total_bans <= 0:
+                # Inte tillräckligt med kartor för att banna
+                logger.info(f'Inte tillräckligt med kartor för ban phase')
+                return
+            
+            # Hitta text channels för voice channels
+            team1_text = None
+            team2_text = None
+            
+            for channel in guild.text_channels:
+                if team1_channel.name in channel.name or f"match-{match.match_number}-team-1" in channel.name:
+                    team1_text = channel
+                if team2_channel.name in channel.name or f"match-{match.match_number}-team-2" in channel.name:
+                    team2_text = channel
+            
+            # Om text channels inte finns, skapa dem
+            if not team1_text:
+                team1_text = await guild.create_text_channel(
+                    name=f"match-{match.match_number}-team-1",
+                    category=team1_channel.category,
+                    reason=f"Map ban för match {match.id}"
+                )
+            
+            if not team2_text:
+                team2_text = await guild.create_text_channel(
+                    name=f"match-{match.match_number}-team-2",
+                    category=team2_channel.category,
+                    reason=f"Map ban för match {match.id}"
+                )
+            
+            # Skapa ban view och embeds
+            from cogs.match import MapBanView
+            
+            view = MapBanView(
+                match_id=match.id,
+                tournament=tournament,
+                available_maps=maps,
+                total_bans_needed=total_bans,
+                maps_to_keep=maps_needed,
+                participant1_id=match.participant1_id,
+                participant2_id=match.participant2_id,
+                bot=self.bot
+            )
+            
+            # Skapa initial embed för båda lagen
+            embed = discord.Embed(
+                title=f"🗺️ Map Ban Phase - Match {match.match_number}",
+                description=f"**Best of {bo_format}**\n\n"
+                        f"Lagkaptener, banna {total_bans} kartor!\n"
+                        f"Ni har 30 sekunder per ban.",
+                color=discord.Color.orange(),
+                timestamp=datetime.utcnow()
+            )
+            
+            embed.add_field(
+                name="📋 Tillgängliga Kartor",
+                value="\n".join([f"✅ {m}" for m in maps]),
+                inline=False
+            )
+            
+            embed.add_field(
+                name="🚫 Bannade Kartor",
+                value="*Inga bans än*",
+                inline=False
+            )
+            
+            embed.set_footer(text=f"Match ID: {match.id}")
+            
+            # Skicka till båda team channels
+            msg1 = await team1_text.send(embed=embed, view=view)
+            msg2 = await team2_text.send(embed=embed, view=view)
+            
+            # Spara message IDs
+            async with async_session() as session:
+                match_db = await session.get(Match, match.id)
+                match_db.ban_message_id_team1 = msg1.id
+                match_db.ban_message_id_team2 = msg2.id
+                await session.commit()
+            
+            # Starta ban-processen
+            view.team1_text_channel = team1_text
+            view.team2_text_channel = team2_text
+            view.message1 = msg1
+            view.message2 = msg2
+            
+            logger.info(f'Startade map ban phase för match {match.id}')
+            
+        except Exception as e:
+            logger.error(f'Fel vid start av map ban phase: {e}', exc_info=True)
+        
     async def cleanup_match_channels(
         self, 
         guild: discord.Guild, 
@@ -262,6 +389,15 @@ class VoiceCog(commands.Cog):
                 moved_t1, moved_t2 = await self.move_players_to_channels(
                     interaction.guild,
                     match,
+                    team1_channel,
+                    team2_channel
+                )
+
+                # Starta map ban phase
+                await self.start_map_ban_phase(
+                    interaction.guild,
+                    match,
+                    tournament,
                     team1_channel,
                     team2_channel
                 )

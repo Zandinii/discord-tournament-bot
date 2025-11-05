@@ -18,6 +18,314 @@ import logging
 
 logger = logging.getLogger('TournamentBot.Match')
 
+class MapBanView(discord.ui.View):
+    """View för map bans med knappar"""
+    
+    def __init__(
+        self, 
+        match_id: int, 
+        tournament,
+        available_maps: list[str],
+        total_bans_needed: int,
+        maps_to_keep: int,
+        participant1_id: int,
+        participant2_id: int,
+        bot
+    ):
+        super().__init__(timeout=None)
+        self.match_id = match_id
+        self.tournament = tournament
+        self.available_maps = available_maps.copy()
+        self.banned_maps = []
+        self.total_bans_needed = total_bans_needed
+        self.maps_to_keep = maps_to_keep
+        self.participant1_id = participant1_id
+        self.participant2_id = participant2_id
+        self.current_banner = participant1_id  # Börja med team 1
+        self.bans_done = 0
+        self.bot = bot
+        self.team1_text_channel = None
+        self.team2_text_channel = None
+        self.message1 = None
+        self.message2 = None
+        self.ban_timer_task = None
+        
+        # Skapa knappar för varje karta
+        self.create_buttons()
+    
+    def create_buttons(self):
+        """Skapa knappar för alla kartor"""
+        self.clear_items()
+        
+        for map_name in self.available_maps:
+            button = discord.ui.Button(
+                label=map_name,
+                style=discord.ButtonStyle.primary,
+                custom_id=f"ban_{map_name}"
+            )
+            button.callback = self.create_ban_callback(map_name)
+            self.add_item(button)
+    
+    def create_ban_callback(self, map_name: str):
+        """Skapa callback för en specifik karta"""
+        async def callback(interaction: discord.Interaction):
+            await self.handle_ban(interaction, map_name)
+        return callback
+    
+    async def handle_ban(self, interaction: discord.Interaction, map_name: str):
+        """Hantera när någon bannar en karta"""
+        
+        # Kolla om det är rätt person som bannar
+        is_team_tournament = self.tournament.game_mode in ['2v2', '5v5']
+        
+        if is_team_tournament:
+            # Kolla om användaren är captain för det lag som ska banna
+            from database.models import Team
+            async with async_session() as session:
+                if self.current_banner == self.participant1_id:
+                    team = await session.get(Team, self.participant1_id)
+                    if not team or team.captain_id != interaction.user.id:
+                        await interaction.response.send_message(
+                            "❌ Endast lagkapten kan banna!", ephemeral=True
+                        )
+                        return
+                else:
+                    team = await session.get(Team, self.participant2_id)
+                    if not team or team.captain_id != interaction.user.id:
+                        await interaction.response.send_message(
+                            "❌ Endast lagkapten kan banna!", ephemeral=True
+                        )
+                        return
+        else:
+            # 1v1, kolla om det är rätt spelare
+            if interaction.user.id != self.current_banner:
+                await interaction.response.send_message(
+                    "❌ Det är inte din tur att banna!", ephemeral=True
+                )
+                return
+        
+        # Banna kartan
+        if map_name not in self.available_maps:
+            await interaction.response.send_message(
+                "❌ Denna karta är redan bannad!", ephemeral=True
+            )
+            return
+        
+        # Spara ban i databas
+        from database.models import MapBan
+        async with async_session() as session:
+            map_ban = MapBan(
+                match_id=self.match_id,
+                participant_id=self.current_banner,
+                map_name=map_name,
+                ban_order=self.bans_done + 1
+            )
+            session.add(map_ban)
+            await session.commit()
+        
+        # Ta bort från tillgängliga
+        self.available_maps.remove(map_name)
+        self.banned_maps.append({
+            'map': map_name,
+            'banned_by': self.current_banner,
+            'order': self.bans_done + 1
+        })
+        self.bans_done += 1
+        
+        await interaction.response.defer()
+        
+        # Uppdatera embeds
+        await self.update_embeds()
+        
+        # Kolla om vi är klara
+        if self.bans_done >= self.total_bans_needed:
+            await self.finish_ban_phase()
+        else:
+            # Byt vems tur det är
+            self.current_banner = self.participant2_id if self.current_banner == self.participant1_id else self.participant1_id
+            
+            # Starta timer för nästa ban
+            if self.ban_timer_task:
+                self.ban_timer_task.cancel()
+            self.ban_timer_task = asyncio.create_task(self.ban_timeout())
+    
+    async def update_embeds(self):
+        """Uppdatera båda embed-meddelandena"""
+        
+        embed = discord.Embed(
+            title=f"🗺️ Map Ban Phase - Match {self.match_id}",
+            description=f"**Best of {self.maps_to_keep}**\n\n"
+                       f"Bans: {self.bans_done}/{self.total_bans_needed}",
+            color=discord.Color.orange(),
+            timestamp=datetime.utcnow()
+        )
+        
+        # Tillgängliga kartor
+        if self.available_maps:
+            embed.add_field(
+                name="📋 Tillgängliga Kartor",
+                value="\n".join([f"✅ {m}" for m in self.available_maps]),
+                inline=False
+            )
+        
+        # Bannade kartor
+        if self.banned_maps:
+            banned_text = "\n".join([
+                f"🚫 {b['map']} (Ban #{b['order']})" 
+                for b in self.banned_maps
+            ])
+            embed.add_field(
+                name="🚫 Bannade Kartor",
+                value=banned_text,
+                inline=False
+            )
+        
+        # Vems tur
+        if self.bans_done < self.total_bans_needed:
+            embed.add_field(
+                name="⏳ Väntar på",
+                value=f"<@{self.current_banner}> - 30 sekunder kvar",
+                inline=False
+            )
+        
+        # Uppdatera knappar
+        self.create_buttons()
+        
+        # Uppdatera båda meddelanden
+        try:
+            if self.message1:
+                await self.message1.edit(embed=embed, view=self)
+            if self.message2:
+                await self.message2.edit(embed=embed, view=self)
+        except Exception as e:
+            logger.error(f'Fel vid uppdatering av embeds: {e}')
+    
+    async def ban_timeout(self):
+        """Hantera timeout (30 sekunder)"""
+        try:
+            await asyncio.sleep(30)
+            
+            # Om vi fortfarande väntar på ban, välj random
+            if self.bans_done < self.total_bans_needed and self.available_maps:
+                random_map = random.choice(self.available_maps)
+                
+                # Spara ban
+                from database.models import MapBan
+                async with async_session() as session:
+                    map_ban = MapBan(
+                        match_id=self.match_id,
+                        participant_id=self.current_banner,
+                        map_name=random_map,
+                        ban_order=self.bans_done + 1
+                    )
+                    session.add(map_ban)
+                    await session.commit()
+                
+                # Ta bort från tillgängliga
+                self.available_maps.remove(random_map)
+                self.banned_maps.append({
+                    'map': random_map,
+                    'banned_by': self.current_banner,
+                    'order': self.bans_done + 1
+                })
+                self.bans_done += 1
+                
+                # Notifiera timeout
+                if self.team1_text_channel:
+                    await self.team1_text_channel.send(
+                        f"⏰ <@{self.current_banner}> fick timeout! **{random_map}** bannades automatiskt."
+                    )
+                if self.team2_text_channel:
+                    await self.team2_text_channel.send(
+                        f"⏰ <@{self.current_banner}> fick timeout! **{random_map}** bannades automatiskt."
+                    )
+                
+                # Uppdatera embeds
+                await self.update_embeds()
+                
+                # Kolla om vi är klara
+                if self.bans_done >= self.total_bans_needed:
+                    await self.finish_ban_phase()
+                else:
+                    # Byt tur
+                    self.current_banner = self.participant2_id if self.current_banner == self.participant1_id else self.participant1_id
+                    self.ban_timer_task = asyncio.create_task(self.ban_timeout())
+        
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            logger.error(f'Fel i ban timeout: {e}', exc_info=True)
+    
+    async def finish_ban_phase(self):
+        """Avsluta ban phase och slumpa kartor + sidor"""
+        
+        # Disable alla knappar
+        for item in self.children:
+            item.disabled = True
+        
+        try:
+            await self.message1.edit(view=self)
+            await self.message2.edit(view=self)
+        except:
+            pass
+        
+        # Slumpa ordning på kvarvarande kartor
+        random.shuffle(self.available_maps)
+        
+        # Skapa map list med sidor
+        maps_to_play = []
+        sides = ['CT', 'T']  # För CS2
+        
+        for map_name in self.available_maps[:self.maps_to_keep]:
+            # Slumpa vilken sida participant1 börjar på
+            p1_side = random.choice(sides)
+            p2_side = 'T' if p1_side == 'CT' else 'CT'
+            
+            maps_to_play.append({
+                'map': map_name,
+                'side_p1': p1_side,
+                'side_p2': p2_side
+            })
+        
+        # Spara i databas
+        import json
+        async with async_session() as session:
+            match = await session.get(Match, self.match_id)
+            match.maps_to_play = json.dumps(maps_to_play)
+            match.ban_phase_complete = True
+            await session.commit()
+        
+        # Skapa final embed
+        final_embed = discord.Embed(
+            title="✅ Map Ban Phase Klar!",
+            description=f"**Best of {self.maps_to_keep}**",
+            color=discord.Color.green(),
+            timestamp=datetime.utcnow()
+        )
+        
+        # Visa kartor som ska spelas
+        maps_text = ""
+        for i, map_info in enumerate(maps_to_play, 1):
+            maps_text += f"**Map {i}:** {map_info['map']}\n"
+            maps_text += f"├ <@{self.participant1_id}>: {map_info['side_p1']}\n"
+            maps_text += f"└ <@{self.participant2_id}>: {map_info['side_p2']}\n\n"
+        
+        final_embed.add_field(
+            name="🗺️ Kartor att Spela",
+            value=maps_text,
+            inline=False
+        )
+        
+        final_embed.set_footer(text="Lycka till! Rapportera resultat med /report-win när ni är klara.")
+        
+        # Skicka till båda channels
+        if self.team1_text_channel:
+            await self.team1_text_channel.send(embed=final_embed)
+        if self.team2_text_channel:
+            await self.team2_text_channel.send(embed=final_embed)
+        
+        logger.info(f'Map ban phase klar för match {self.match_id}')
+
 async def cleanup_voice_after_match(bot, guild_id: int, match_id: int):
     """Helper funktion för att rensa voice channels efter match"""
     try:

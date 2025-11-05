@@ -63,6 +63,11 @@ async def auto_setup_matches(bot, guild_id: int, tournament_id: int):
                     await voice_cog.move_players_to_channels(
                         guild, match, team1_channel, team2_channel
                     )
+
+                    # Starta map ban phase
+                    await voice_cog.start_map_ban_phase(
+                        guild, match, tournament, team1_channel, team2_channel
+                    )
             
             await session.commit()
             logger.info(f'Auto-setup {len(matches)} matcher för turnering {tournament_id}')

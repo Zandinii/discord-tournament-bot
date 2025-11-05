@@ -4,6 +4,7 @@ import os
 from dotenv import load_dotenv
 import logging
 import sys
+from utils.scheduler import start_scheduler, stop_scheduler
 
 # Fix for Windows console encoding (Support emojis without issues)
 if sys.platform == "win32":
@@ -38,7 +39,7 @@ intents.voice_states = True
 bot = commands.Bot(command_prefix='!', intents=intents)
 
 async def load_extensions():
-    extensions = ['cogs.admin', 'cogs.player', 'cogs.tournament', 'cogs.match', 'cogs.voice', 'cogs.team']
+    extensions = ['cogs.admin', 'cogs.player', 'cogs.tournament', 'cogs.match', 'cogs.voice', 'cogs.team', 'cogs.help']
     for ext in extensions:
         try:
             await bot.load_extension(ext)
@@ -60,6 +61,9 @@ async def on_ready():
 
     # Load extensions (cogs)
     await load_extensions()
+
+    await start_scheduler(bot)
+    logger.info("✅ Notification schemaläggare startad.")
 
     # Publish commands globally (clear guild-specific commands first to avoid duplicates)
     try:
@@ -120,3 +124,8 @@ if __name__ == "__main__":
     except Exception as e:
         logger.critical(f'❌ Misslyckades med att starta boten: {e}', exc_info=True)
 
+@bot.event
+async def on_disconnect():
+    """När botten kopplar från"""
+    await stop_scheduler()
+    logger.info('Bot disconnected')

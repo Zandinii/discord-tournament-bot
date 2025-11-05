@@ -51,6 +51,10 @@ class Tournament(Base):
     created_by = Column(Integer, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     announcement_message_id = Column(Integer, nullable=True)
+    game_name = Column(String(50), nullable=True)  # CS2, Valorant, etc
+    bo_format_groupstage = Column(Integer, default=1)  # Best of 1 eller 3 för gruppspel
+    bo_format_playoffs = Column(Integer, default=1)  # Best of 1 eller 3 för slutspel
+    map_pool = Column(Text, nullable=True)  # JSON string med kartor: ["Dust2", "Mirage", ...]
     
     # Relationships
     participants = relationship("TournamentParticipant", back_populates="tournament", cascade="all, delete-orphan")
@@ -148,6 +152,10 @@ class Match(Base):
     voice_channel_2_id = Column(Integer, nullable=True)
     started_at = Column(DateTime, nullable=True)
     completed_at = Column(DateTime, nullable=True)
+    maps_to_play = Column(Text, nullable=True)  # JSON: [{"map": "Dust2", "side_p1": "CT"}, ...]
+    ban_phase_complete = Column(Boolean, default=False)
+    ban_message_id_team1 = Column(Integer, nullable=True)  # Embed message i team1 channel
+    ban_message_id_team2 = Column(Integer, nullable=True)  # Embed message i team2 channel
     
     # Relationships
     tournament = relationship("Tournament", back_populates="matches")
@@ -195,3 +203,16 @@ class Notification(Base):
     
     def __repr__(self):
         return f"<Notification(id={self.id}, sent={self.sent})>"
+    
+class MapBan(Base):
+    __tablename__ = 'map_bans'
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    match_id = Column(Integer, ForeignKey('matches.id', ondelete='CASCADE'), nullable=False)
+    participant_id = Column(Integer, nullable=False)  # Team eller User ID som bannade
+    map_name = Column(String(100), nullable=False)
+    ban_order = Column(Integer, nullable=False)  # Ordning av bans
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    def __repr__(self):
+        return f"<MapBan(match_id={self.match_id}, map='{self.map_name}')>"

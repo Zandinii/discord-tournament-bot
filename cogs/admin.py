@@ -35,6 +35,29 @@ class TournamentModal(discord.ui.Modal, title='Skapa Turnering'):
         placeholder='2024-12-25 18:00',
         required=True
     )
+
+    game_name = discord.ui.TextInput(
+        label='Spel (t.ex. CS2, Valorant)',
+        placeholder='CS2',
+        required=False,
+        max_length=50
+    )
+    
+    map_pool = discord.ui.TextInput(
+        label='Kartor (separera med komma)',
+        style=discord.TextStyle.paragraph,
+        placeholder='Dust2, Mirage, Inferno, Nuke, Overpass, Vertigo, Ancient',
+        required=False,
+        max_length=500
+    )
+    
+    bo_format = discord.ui.TextInput(
+        label='Best of Format (1 eller 3)',
+        placeholder='1 för BO1, 3 för BO3',
+        required=False,
+        default='1',
+        max_length=1
+    )
     
     def __init__(self, name: str, game_mode: str, tournament_type: str, max_players: int):
         super().__init__()
@@ -75,7 +98,11 @@ class TournamentModal(discord.ui.Modal, title='Skapa Turnering'):
                     prize_description=self.prize.value,
                     description=self.description.value if self.description.value else None,
                     created_by=interaction.user.id,
-                    status=TournamentStatus.SIGNUP
+                    status=TournamentStatus.SIGNUP,
+                    game_name=self.game_name.value if self.game_name.value else None,
+                    bo_format_groupstage=int(self.bo_format.value) if self.bo_format.value and self.bo_format.value.isdigit() else 1,
+                    bo_format_playoffs=int(self.bo_format.value) if self.bo_format.value and self.bo_format.value.isdigit() else 3,
+                    map_pool=self.map_pool.value if self.map_pool.value else None
                 )
                 session.add(tournament)
                 await session.commit()
