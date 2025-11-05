@@ -1,0 +1,226 @@
+import math
+from typing import List, Tuple, Optional
+from database.models import Match, TournamentParticipant, MatchStatus
+import random
+
+def generate_single_elimination(tournament_id: int, participants: List[TournamentParticipant]) -> List[Match]:
+    """
+    Generera single elimination bracket.
+    
+    Args:
+        tournament_id: Turnerings-ID
+        participants: Lista med anmälda deltagare
+    
+    Returns:
+        Lista med Match-objekt för första rundan
+    """
+    
+    num_participants = len(participants)
+    
+    if num_participants < 2:
+        raise ValueError("Minst 2 deltagare krävs för en turnering!")
+    
+    # Beräkna antal rounds
+    num_rounds = math.ceil(math.log2(num_participants))
+    bracket_size = 2 ** num_rounds
+    
+    # Seed deltagare
+    seeded = seed_participants(participants, method='elo')
+    
+    # Lägg till byes om nödvändigt
+    byes_needed = bracket_size - num_participants
+    
+    matches = []
+    match_number = 1
+    
+    # Skapa första rundan
+    for i in range(0, bracket_size, 2):
+        p1 = seeded[i] if i < len(seeded) else None
+        p2 = seeded[i + 1] if i + 1 < len(seeded) else None
+        
+        match = Match(
+            tournament_id=tournament_id,
+            round_number=1,
+            match_number=match_number,
+            participant1_id=p1.participant_id if p1 else None,
+            participant2_id=p2.participant_id if p2 else None,
+            status=MatchStatus.PENDING
+        )
+        
+        # Om någon är None (BYE), automatisk vinst
+        if p1 and not p2:
+            match.winner_id = p1.participant_id
+            match.status = MatchStatus.COMPLETED
+            match.score_p1 = 1
+            match.score_p2 = 0
+        elif p2 and not p1:
+            match.winner_id = p2.participant_id
+            match.status = MatchStatus.COMPLETED
+            match.score_p1 = 0
+            match.score_p2 = 1
+        
+        matches.append(match)
+        match_number += 1
+    
+    return matches
+
+def generate_round_robin(tournament_id: int, participants: List[TournamentParticipant]) -> List[Match]:
+    """
+    Generera round robin bracket (alla möter alla).
+    
+    Args:
+        tournament_id: Turnerings-ID
+        participants: Lista med anmälda deltagare
+    
+    Returns:
+        Lista med alla matcher
+    """
+    
+    num_participants = len(participants)
+    
+    if num_participants < 2:
+        raise ValueError("Minst 2 deltagare krävs för en turnering!")
+    
+    matches = []
+    match_number = 1
+    
+    # Generera alla möjliga matchups
+    for i in range(num_participants):
+        for j in range(i + 1, num_participants):
+            match = Match(
+                tournament_id=tournament_id,
+                round_number=1,  # Alla matcher i samma "round"
+                match_number=match_number,
+                participant1_id=participants[i].participant_id,
+                participant2_id=participants[j].participant_id,
+                status=MatchStatus.PENDING
+            )
+            matches.append(match)
+            match_number += 1
+    
+    return matches
+
+def seed_participants(participants: List[TournamentParticipant], method: str = 'elo') -> List[TournamentParticipant]:
+    """
+    Seed deltagare för bracket.
+    
+    Methods:
+        - 'elo': Sortera efter ELO rating (behöver Player data)
+        - 'random': Slumpmässig
+        - 'signup': First come first serve
+    """
+    
+    if method == 'random':
+        shuffled = participants.copy()
+        random.shuffle(shuffled)
+        return shuffled
+    elif method == 'signup':
+        return sorted(participants, key=lambda p: p.signup_time)
+    else:  # default elo - för nu använder vi signup ordning
+        # TODO: Implementera ELO-baserad seeding när vi har Player relations
+        return sorted(participants, key=lambda p: p.signup_time)
+
+def advance_winner(matches: List[Match], completed_match: Match, winner_id: int) -> Optional[Match]:
+    """
+    Hitta eller skapa nästa match för vinnare i single elimination.
+    
+    Args:
+        matches: Alla matcher i turneringen
+        completed_match: Den avslutade matchen
+        winner_id: ID för vinnaren
+    
+    Returns:
+        Nästa match som vinnaren ska spela, eller None om final
+    """
+    
+    next_round = completed_match.round_number + 1
+    next_match_number = (completed_match.match_number + 1) // 2
+    
+    # Hitta om next match redan finns
+    next_match = None
+    for match in matches:
+        if match.round_number == next_round and match.match_number == next_match_number:
+            next_match = match
+            break
+    
+    if not next_match:
+        # Skapa ny match för nästa round
+        next_match = Match(
+            tournament_id=completed_match.tournament_id,
+            round_number=next_round,
+            match_number=next_match_number,
+            status=MatchStatus.PENDING
+        )
+    
+    # Sätt vinnare i rätt slot (udda match = participant1, jämn = participant2)
+    if completed_match.match_number % 2 == 1:
+        next_match.participant1_id = winner_id
+    else:
+        next_match.participant2_id = winner_id
+    
+    return next_match
+
+def calculate_total_rounds(num_participants: int, bracket_type: str) -> int:
+    """Beräkna totalt antal rounds för en turnering"""
+    if bracket_type == 'single_elim':
+        return math.ceil(math.log2(num_participants))
+    elif bracket_type == 'round_robin':
+        return 1  # Alla matcher i samma "round"
+    elif bracket_type == 'double_elim':
+        # Winner bracket + Loser bracket + Grand Finals
+        return math.ceil(math.log2(num_participants)) * 2 + 1
+    return 1
+
+def get_bracket_structure(tournament_id: int, matches: List[Match]) -> dict:
+    """
+    Organisera matcher i en bracket-struktur för visualisering.
+    
+    Returns:
+        Dictionary med rounds och matcher
+    """
+    
+    if not matches:
+        return {}
+    
+    # Gruppera matcher per round
+    rounds = {}
+    for match in matches:
+        if match.round_number not in rounds:
+            rounds[match.round_number] = []
+        rounds[match.round_number].append(match)
+    
+    # Sortera matcher inom varje round
+    for round_num in rounds:
+        rounds[round_num] = sorted(rounds[round_num], key=lambda m: m.match_number)
+    
+    return rounds
+
+def is_bracket_complete(matches: List[Match]) -> bool:
+    """Kolla om alla matcher i bracket är avslutade"""
+    return all(m.status == MatchStatus.COMPLETED for m in matches)
+
+def get_tournament_winner(matches: List[Match]) -> Optional[int]:
+    """
+    Hitta vinnaren av turneringen (sista matchens vinnare).
+    
+    Returns:
+        Winner ID eller None om turneringen inte är klar
+    """
+    
+    if not matches:
+        return None
+    
+    # Hitta högsta round number
+    max_round = max(m.round_number for m in matches)
+    
+    # Hitta finalen (högsta round, match 1)
+    final_match = None
+    for match in matches:
+        if match.round_number == max_round and match.match_number == 1:
+            final_match = match
+            break
+    
+    if final_match and final_match.status == MatchStatus.COMPLETED:
+        return final_match.winner_id
+    
+    return None

@@ -1,0 +1,11 @@
+venv/
+__pycache__/
+*.pyc
+.env
+*.log
+.vscode/
+.idea/
+*.db
+*.db-journal
+database/migrations/versions/
+node_modules/
