@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 import logging
 import sys
 from utils.scheduler import start_scheduler, stop_scheduler
+from utils.tournament_scheduler import start_tournament_scheduler, stop_tournament_scheduler
 
 # Fix for Windows console encoding (Support emojis without issues)
 if sys.platform == "win32":
@@ -41,7 +42,7 @@ bot = commands.Bot(command_prefix='!', intents=intents)
 async def load_extensions():
     extensions = ['cogs.admin', 'cogs.player', 'cogs.tournament', 
                   'cogs.match', 'cogs.voice', 'cogs.team', 'cogs.help', 'cogs.season',
-                  'cogs.achievements'
+                  'cogs.achievements', 'cogs.templates'
     ]
     for ext in extensions:
         try:
@@ -67,6 +68,9 @@ async def on_ready():
 
     await start_scheduler(bot)
     logger.info("✅ Notification schemaläggare startad.")
+
+    await start_tournament_scheduler(bot)
+    logger.info("✅ Tournament scheduler startad.")
 
     # Publish commands globally (clear guild-specific commands first to avoid duplicates)
     try:
@@ -131,4 +135,5 @@ if __name__ == "__main__":
 async def on_disconnect():
     """När botten kopplar från"""
     await stop_scheduler()
+    await stop_tournament_scheduler()
     logger.info('Bot disconnected')

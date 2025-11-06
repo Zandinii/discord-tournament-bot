@@ -302,3 +302,35 @@ class PlayerAchievement(Base):
     
     def __repr__(self):
         return f"<PlayerAchievement(user_id={self.user_id}, achievement_id={self.achievement_id})>"
+    
+class TournamentTemplate(Base):
+    __tablename__ = 'tournament_templates'
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    guild_id = Column(Integer, ForeignKey('guilds.guild_id'), nullable=False)
+    name = Column(String(100), nullable=False)
+    game_mode = Column(String(10), nullable=False)
+    game_type = Column(String(20), nullable=False)
+    max_participants = Column(Integer, default=32)
+    prize_description = Column(String(500), nullable=True)
+    description = Column(Text, nullable=True)
+    
+    # Map ban system
+    game_name = Column(String(50), nullable=True)
+    bo_format_groupstage = Column(Integer, default=1)
+    bo_format_playoffs = Column(Integer, default=1)
+    map_pool = Column(Text, nullable=True)
+    
+    # Scheduling
+    recurring = Column(Boolean, default=False)
+    recurrence_type = Column(String(20), nullable=True)  # weekly, biweekly, monthly
+    day_of_week = Column(Integer, nullable=True)  # 0=Monday, 6=Sunday
+    time_of_day = Column(String(5), nullable=True)  # "18:00"
+    is_active = Column(Boolean, default=True)
+    last_created = Column(DateTime, nullable=True)
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    created_by = Column(Integer, nullable=False)
+    
+    def __repr__(self):
+        return f"<TournamentTemplate(name='{self.name}', recurring={self.recurring})>"
