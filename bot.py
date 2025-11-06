@@ -39,7 +39,10 @@ intents.voice_states = True
 bot = commands.Bot(command_prefix='!', intents=intents)
 
 async def load_extensions():
-    extensions = ['cogs.admin', 'cogs.player', 'cogs.tournament', 'cogs.match', 'cogs.voice', 'cogs.team', 'cogs.help']
+    extensions = ['cogs.admin', 'cogs.player', 'cogs.tournament', 
+                  'cogs.match', 'cogs.voice', 'cogs.team', 'cogs.help', 'cogs.season',
+                  'cogs.achievements'
+    ]
     for ext in extensions:
         try:
             await bot.load_extension(ext)

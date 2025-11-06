@@ -55,6 +55,7 @@ class Tournament(Base):
     bo_format_groupstage = Column(Integer, default=1)  # Best of 1 eller 3 för gruppspel
     bo_format_playoffs = Column(Integer, default=1)  # Best of 1 eller 3 för slutspel
     map_pool = Column(Text, nullable=True)  # JSON string med kartor: ["Dust2", "Mirage", ...]
+    season_id = Column(Integer, ForeignKey('seasons.id'), nullable=True)
     
     # Relationships
     participants = relationship("TournamentParticipant", back_populates="tournament", cascade="all, delete-orphan")
@@ -77,6 +78,10 @@ class Player(Base):
     tournaments_won = Column(Integer, default=0)
     tournaments_participated = Column(Integer, default=0)
     created_at = Column(DateTime, default=datetime.utcnow)
+    current_season_id = Column(Integer, ForeignKey('seasons.id'), nullable=True)
+    highest_elo = Column(Integer, default=1000)
+    win_streak = Column(Integer, default=0)
+    best_win_streak = Column(Integer, default=0)
     
     def __repr__(self):
         return f"<Player(user_id={self.user_id}, username='{self.username}', elo={self.elo_rating})>"
@@ -216,3 +221,84 @@ class MapBan(Base):
     
     def __repr__(self):
         return f"<MapBan(match_id={self.match_id}, map='{self.map_name}')>"
+
+class Season(Base):
+    __tablename__ = 'seasons'
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    guild_id = Column(Integer, ForeignKey('guilds.guild_id'), nullable=False)
+    name = Column(String(100), nullable=False)
+    start_date = Column(DateTime, nullable=False)
+    end_date = Column(DateTime, nullable=True)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    def __repr__(self):
+        return f"<Season(name='{self.name}', active={self.is_active})>"
+
+class SeasonStats(Base):
+    __tablename__ = 'season_stats'
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    season_id = Column(Integer, ForeignKey('seasons.id', ondelete='CASCADE'), nullable=False)
+    user_id = Column(Integer, nullable=False)
+    guild_id = Column(Integer, nullable=False)
+    elo_rating = Column(Integer, default=1000)
+    matches_played = Column(Integer, default=0)
+    wins = Column(Integer, default=0)
+    losses = Column(Integer, default=0)
+    tournaments_played = Column(Integer, default=0)
+    tournaments_won = Column(Integer, default=0)
+    highest_elo = Column(Integer, default=1000)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    def __repr__(self):
+        return f"<SeasonStats(season_id={self.season_id}, user_id={self.user_id})>"
+
+class MatchHistory(Base):
+    __tablename__ = 'match_history'
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    match_id = Column(Integer, ForeignKey('matches.id', ondelete='CASCADE'), nullable=False)
+    user_id = Column(Integer, nullable=False)
+    opponent_id = Column(Integer, nullable=False)
+    won = Column(Boolean, nullable=False)
+    elo_change = Column(Integer, nullable=False)
+    elo_before = Column(Integer, nullable=False)
+    elo_after = Column(Integer, nullable=False)
+    tournament_id = Column(Integer, ForeignKey('tournaments.id'), nullable=True)
+    played_at = Column(DateTime, default=datetime.utcnow)
+    
+    def __repr__(self):
+        return f"<MatchHistory(user_id={self.user_id}, won={self.won})>"
+    
+class Achievement(Base):
+    __tablename__ = 'achievements'
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(100), nullable=False, unique=True)
+    description = Column(String(500), nullable=False)
+    icon = Column(String(50), nullable=True)  # Emoji eller icon name
+    requirement_type = Column(String(50), nullable=False)  # wins_streak, tournament_win, elo_milestone, etc
+    requirement_value = Column(Integer, nullable=False)
+    reward_role_name = Column(String(100), nullable=True)  # Optional Discord role name
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    def __repr__(self):
+        return f"<Achievement(name='{self.name}')>"
+
+class PlayerAchievement(Base):
+    __tablename__ = 'player_achievements'
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, nullable=False)
+    guild_id = Column(Integer, nullable=False)
+    achievement_id = Column(Integer, ForeignKey('achievements.id', ondelete='CASCADE'), nullable=False)
+    earned_at = Column(DateTime, default=datetime.utcnow)
+    notified = Column(Boolean, default=False)
+    
+    # Relationships
+    achievement = relationship("Achievement")
+    
+    def __repr__(self):
+        return f"<PlayerAchievement(user_id={self.user_id}, achievement_id={self.achievement_id})>"

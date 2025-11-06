@@ -6,7 +6,8 @@ from datetime import datetime
 from database.database import async_session
 from database.models import (
     Tournament, TournamentParticipant, Player, 
-    TournamentStatus, ParticipantType, Match
+    TournamentStatus, ParticipantType, Match,
+    MatchHistory
 )
 from utils.embeds import (
     create_player_profile, create_leaderboard, 
@@ -334,6 +335,66 @@ class PlayerCog(commands.Cog):
                 logger.error(f'Fel vid hämtning av leaderboard: {e}', exc_info=True)
                 await interaction.response.send_message(
                     embed=create_error_embed(f'Kunde inte hämta leaderboard: {str(e)}'),
+                    ephemeral=True
+                )
+
+    @app_commands.command(name="match-history", description="Visa din match-historik")
+    @app_commands.describe(user="Användare att visa historik för (valfritt)")
+    async def match_history(
+        self, 
+        interaction: discord.Interaction,
+        user: Optional[discord.User] = None
+    ):
+        """Visa match-historik"""
+        
+        target_user = user or interaction.user
+        
+        async with async_session() as session:
+            try:
+                # Hämta senaste 10 matcher
+                result = await session.execute(
+                    select(MatchHistory, Player).outerjoin(
+                        Player, MatchHistory.opponent_id == Player.user_id
+                    ).where(
+                        MatchHistory.user_id == target_user.id
+                    ).order_by(MatchHistory.played_at.desc()).limit(10)
+                )
+                
+                matches = result.all()
+                
+                if not matches:
+                    await interaction.response.send_message(
+                        embed=create_error_embed(f'{target_user.mention} har ingen match-historik!'),
+                        ephemeral=True
+                    )
+                    return
+                
+                embed = discord.Embed(
+                    title=f"📜 Match Historik - {target_user.name}",
+                    color=discord.Color.blue(),
+                    timestamp=datetime.utcnow()
+                )
+                
+                for history, opponent in matches:
+                    result_emoji = "✅" if history.won else "❌"
+                    elo_emoji = "📈" if history.elo_change > 0 else "📉"
+                    opponent_name = opponent.username if opponent else f"Spelare {history.opponent_id}"
+                    
+                    embed.add_field(
+                        name=f"{result_emoji} vs {opponent_name}",
+                        value=f"{elo_emoji} {history.elo_before} → {history.elo_after} ({history.elo_change:+d})\n"
+                              f"<t:{int(history.played_at.timestamp())}:R>",
+                        inline=False
+                    )
+                
+                embed.set_footer(text="Senaste 10 matcherna")
+                
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+                
+            except Exception as e:
+                logger.error(f'Fel vid hämtning av match history: {e}', exc_info=True)
+                await interaction.response.send_message(
+                    embed=create_error_embed(f'Kunde inte hämta match history: {str(e)}'),
                     ephemeral=True
                 )
 

@@ -6,7 +6,8 @@ from datetime import datetime
 from database.database import async_session
 from database.models import (
     Match, Tournament, Player, TournamentParticipant,
-    MatchStatus, TournamentStatus, ParticipantType, ChampionHistory
+    MatchStatus, TournamentStatus, ParticipantType, ChampionHistory,
+    MatchHistory
 )
 from utils.embeds import (
     create_match_embed, create_error_embed, create_success_embed
@@ -476,6 +477,126 @@ class MatchResultView(discord.ui.View):
                     else:
                         elo_text = ""
                 
+                # Efter ELO uppdatering, lägg till match history
+                if not is_team_tournament:
+                    # Spara match history för båda spelare
+                    winner_history = MatchHistory(
+                        match_id=self.match_id,
+                        user_id=self.winner_id,
+                        opponent_id=loser_id,
+                        won=True,
+                        elo_change=new_winner_elo - winner.elo_rating,
+                        elo_before=winner.elo_rating - (new_winner_elo - winner.elo_rating),
+                        elo_after=new_winner_elo,
+                        tournament_id=match.tournament_id
+                    )
+                    
+                    loser_history = MatchHistory(
+                        match_id=self.match_id,
+                        user_id=loser_id,
+                        opponent_id=self.winner_id,
+                        won=False,
+                        elo_change=new_loser_elo - loser.elo_rating,
+                        elo_before=loser.elo_rating - (new_loser_elo - loser.elo_rating),
+                        elo_after=new_loser_elo,
+                        tournament_id=match.tournament_id
+                    )
+                    
+                    session.add(winner_history)
+                    session.add(loser_history)
+                    
+                    # Uppdatera win streak
+                    winner.win_streak += 1
+                    if winner.win_streak > winner.best_win_streak:
+                        winner.best_win_streak = winner.win_streak
+                    
+                    loser.win_streak = 0
+                    
+                    # Uppdatera highest ELO
+                    if new_winner_elo > winner.highest_elo:
+                        winner.highest_elo = new_winner_elo
+                    
+                    # Uppdatera season stats om säsong är aktiv
+                    from database.models import Season, SeasonStats
+                    active_season = await session.execute(
+                        select(Season).where(
+                            Season.guild_id == interaction.guild_id,
+                            Season.is_active == True
+                        )
+                    )
+                    season = active_season.scalar_one_or_none()
+                    
+                    if season:
+                        # Winner season stats
+                        winner_season = await session.execute(
+                            select(SeasonStats).where(
+                                SeasonStats.season_id == season.id,
+                                SeasonStats.user_id == self.winner_id
+                            )
+                        )
+                        winner_s = winner_season.scalar_one_or_none()
+                        if winner_s:
+                            winner_s.elo_rating = new_winner_elo
+                            winner_s.matches_played += 1
+                            winner_s.wins += 1
+                            if new_winner_elo > winner_s.highest_elo:
+                                winner_s.highest_elo = new_winner_elo
+                        
+                        # Loser season stats
+                        loser_season = await session.execute(
+                            select(SeasonStats).where(
+                                SeasonStats.season_id == season.id,
+                                SeasonStats.user_id == loser_id
+                            )
+                        )
+                        loser_s = loser_season.scalar_one_or_none()
+                        if loser_s:
+                            loser_s.elo_rating = new_loser_elo
+                            loser_s.matches_played += 1
+                            loser_s.losses += 1
+                
+                # Efter match history sparas, lägg till achievement checks
+                    achievements_cog = interaction.client.get_cog('AchievementsCog')
+                    if achievements_cog:
+                        # Check first win
+                        if winner.total_wins == 1:
+                            await achievements_cog.check_and_award_achievements(
+                                self.winner_id, 
+                                interaction.guild_id, 
+                                'first_win'
+                            )
+                        
+                        # Check win streak
+                        await achievements_cog.check_and_award_achievements(
+                            self.winner_id,
+                            interaction.guild_id,
+                            'win_streak'
+                        )
+                        
+                        # Check ELO milestone
+                        await achievements_cog.check_and_award_achievements(
+                            self.winner_id,
+                            interaction.guild_id,
+                            'elo_milestone'
+                        )
+                        
+                        # Check matches played
+                        await achievements_cog.check_and_award_achievements(
+                            self.winner_id,
+                            interaction.guild_id,
+                            'matches_played'
+                        )
+                        
+                        # Check underdog win
+                        elo_diff = loser.elo_rating - winner.elo_rating
+                        if elo_diff > 0:
+                            await achievements_cog.check_and_award_achievements(
+                                self.winner_id,
+                                interaction.guild_id,
+                                'underdog_win',
+                                elo_difference=elo_diff
+                            )
+                
                 # Hantera nästa match i bracket (om single elimination)
                 tournament = await session.get(Tournament, match.tournament_id)
                 
@@ -556,6 +677,21 @@ class MatchResultView(discord.ui.View):
                                 prize_awarded=tournament.prize_description
                             )
                             session.add(champion)
+
+                            # Check tournament achievements
+                            achievements_cog = interaction.client.get_cog('AchievementsCog')
+                            if achievements_cog:
+                                await achievements_cog.check_and_award_achievements(
+                                    winner_id,
+                                    interaction.guild_id,
+                                    'tournament_win'
+                                )
+                                
+                                await achievements_cog.check_and_award_achievements(
+                                    winner_id,
+                                    interaction.guild_id,
+                                    'tournaments_played'
+                                )
                             
                             next_match_text = f"\n\n🏆 **TURNERING AVSLUTAD!**\n🎉 Grattis <@{winner_id}> - Du vann **{tournament.name}**!"
                         else:
