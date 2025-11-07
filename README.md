@@ -1,4 +1,4 @@
-# 🏆 Discord Tournament Bot
+# 🏆 Discord Turnerings Bot
 
 En komplett turnerings-bot för Discord communities som automatiserar hela turneringsflödet från anmälan till vinnare-kröning med ett rikt utbud av funktioner och custom ELO-baserad ranking.
 
