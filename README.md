@@ -1,6 +1,6 @@
 # 🏆 Discord Turnerings Bot
 
-En komplett turnerings-bot för Discord communities som automatiserar hela turneringsflödet från anmälan till vinnare-kröning med ett rikt utbud av funktioner och custom ELO-baserad ranking.
+En komplett turnerings-bot för Discord communities som automatiserar hela turneringsflödet från anmälan till vinnare-kröning med ett rikt utbud av funktioner och skräddarsydd ELO-baserad ranking.
 
 ![Python](https://img.shields.io/badge/python-3.11+-blue.svg)
 ![Discord.py](https://img.shields.io/badge/discord.py-2.3+-blue.svg)
@@ -73,7 +73,6 @@ source venv/bin/activate  # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 
 # Skapa .env fil
-cp .env.example .env
 # Redigera .env med din bot token
 
 # Starta botten
@@ -182,7 +181,7 @@ discord-tournament-bot/
 
 ## 🔧 Configuration
 
-### Environment Variables
+### Environment Variables (.env file)
 
 ```env
 DISCORD_TOKEN=your_bot_token
@@ -213,7 +212,7 @@ Huvudtabeller:
 
 ### Oracle Cloud (Gratis)
 
-Full guide: [README.md deployment section](#)
+Full guide: [deployment-instructions.md](#)
 
 ```bash
 # SSH till server
@@ -251,20 +250,10 @@ tail -f bot.log
 - Response time: <2s för alla commands
 - Supports: 100+ concurrent users
 
-## 🤝 Contributing
-
-Vi välkomnar contributions! Se `CONTRIBUTING.md` för:
-
-- Code style guide
-- Development workflow
-- Commit conventions
-- Pull request process
-
 ## 📝 Documentation
 
-- [API Reference](docs/API_REFERENCE.md) - Alla commands & functions
-- [Testing Guide](docs/TESTING_GUIDE.md) - Komplett testning
-- [Contributing Guide](docs/CONTRIBUTING.md) - Hur du bidrar
+- [API Reference](docs/api-reference.md) - Alla commands & functions
+- [Testing Guide](docs/test-guide.md) - Komplett testning
 
 ## 🐛 Bug Reports
 
