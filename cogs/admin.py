@@ -36,25 +36,18 @@ class TournamentModal(discord.ui.Modal, title='Skapa Turnering'):
         required=True
     )
 
-    game_name = discord.ui.TextInput(
-        label='Spel (t.ex. CS2, Valorant)',
-        placeholder='CS2',
-        required=False,
-        max_length=50
-    )
-    
     map_pool = discord.ui.TextInput(
         label='Kartor (separera med komma)',
         style=discord.TextStyle.paragraph,
         placeholder='Dust2, Mirage, Inferno, Nuke, Overpass, Vertigo, Ancient',
-        required=False,
+        required=True,
         max_length=500
     )
     
     bo_format = discord.ui.TextInput(
-        label='Best of Format (1 eller 3)',
+        label='Best of Format Gruppspel (1 eller 3)',
         placeholder='1 för BO1, 3 för BO3',
-        required=False,
+        required=True,
         default='1',
         max_length=1
     )
@@ -99,9 +92,8 @@ class TournamentModal(discord.ui.Modal, title='Skapa Turnering'):
                     description=self.description.value if self.description.value else None,
                     created_by=interaction.user.id,
                     status=TournamentStatus.SIGNUP,
-                    game_name=self.game_name.value if self.game_name.value else None,
                     bo_format_groupstage=int(self.bo_format.value) if self.bo_format.value and self.bo_format.value.isdigit() else 1,
-                    bo_format_playoffs=int(self.bo_format.value) if self.bo_format.value and self.bo_format.value.isdigit() else 3,
+                    bo_format_playoffs=3,  # Always BO3 for playoffs
                     map_pool=self.map_pool.value if self.map_pool.value else None
                 )
                 session.add(tournament)

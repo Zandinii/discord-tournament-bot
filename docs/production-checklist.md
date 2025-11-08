@@ -2,12 +2,12 @@
 
 ## Pre-Deployment
 
-- [ ] Alla features testade lokalt
-- [ ] Error handling implementerat överallt
+- [x] Alla features testade lokalt
+- [x] Error handling implementerat överallt
 - [ ] Logging konfigurerat korrekt
-- [ ] `.env` fil med riktiga credentials
-- [ ] `.gitignore` innehåller `.env` och `tournament.db`
-- [ ] `requirements.txt` uppdaterad
+- [x] `.env` fil med riktiga credentials
+- [x] `.gitignore` innehåller `.env` och `tournament.db`
+- [x] `requirements.txt` uppdaterad
 - [ ] Database migrations körda
 - [ ] Backup-strategi planerad
 
@@ -68,3 +68,9 @@
 - Implementera Xplay server för att automatiskt skapa spelservrar för matcherna till CS2
 - Testa och optimera för större turneringar (100+ deltagare)
 - Implementera en webbsida för att visa turneringsstatus, resultat, brackets och statistik.
+- Lägg till priser och belöningar för vinnare och deltagare vid säsongsslut.
+- profile och my-stats kommandon för spelare är likadant, gör så my stats är för aktiv season bara medan profil är stats för totala statistiken.
+- uppdatera /help kommandot och lägg till alla kommandon som saknas som tillexempel season, team kommandon som saknas. Gå igenom alla filer för att se vilka som saknas.
+- Lägg till en funktion för att hantera avstängningar och varningar för spelare som bryter mot reglerna.
+- Implementera funktionen team-transfer om kommandot inte redan finns, används för att föra över kapten rollen i ett lag till en annan spelare i laget.
+- Fixa så att alla embed meddelanden har en konsekvent design och färgschema samt är implementerade i embed.py filen och sen används i koden där dem ska.
