@@ -58,3 +58,13 @@
 - [ ] Månadsvis: Uppdatera dependencies
 - [ ] Kvartalsvis: Full system update
 - [ ] Vid behov: Backup restore test
+
+## TODOs for Future Improvements
+
+- Fixa ELO systemet så att det blir jämnare, manuellt skriva in faceit elo och premier elo för CS2
+- Gör den bara anpassad för CS2
+- Lägg till fler turneringsformat (t.ex. Swiss)
+- Lägg till så att en specifik roll får admin rättigheter i boten
+- Implementera Xplay server för att automatiskt skapa spelservrar för matcherna till CS2
+- Testa och optimera för större turneringar (100+ deltagare)
+- Implementera en webbsida för att visa turneringsstatus, resultat, brackets och statistik.
