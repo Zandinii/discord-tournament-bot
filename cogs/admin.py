@@ -162,6 +162,38 @@ class SignupView(discord.ui.View):
                     )
                     return
                 
+                # KOLLA OM ANVÄNDAREN HAR SATT SIN ELO
+                player = await session.get(Player, interaction.user.id)
+                
+                if not player or not player.elo_verified:
+                    await interaction.response.send_message(
+                        embed=create_error_embed(
+                            '❌ Du måste sätta din ELO först!\n\n'
+                            'Använd `/set-elo` för att sätta din CS2 Premier eller Faceit ELO.'
+                        ),
+                        ephemeral=True
+                    )
+                    return
+                
+                # KOLLA OM ANVÄNDAREN ÄR BANNAD
+                from cogs.moderation import ModerationCog
+                moderation_cog = interaction.client.get_cog('ModerationCog')
+                if moderation_cog:
+                    is_banned, ban_reason = await moderation_cog.is_user_banned(
+                        interaction.user.id,
+                        interaction.guild_id
+                    )
+                    
+                    if is_banned:
+                        await interaction.response.send_message(
+                            embed=create_error_embed(
+                                f'🚫 Du är avstängd från turneringar!\n\n'
+                                f'**Anledning:** {ban_reason}'
+                            ),
+                            ephemeral=True
+                        )
+                        return
+                
                 # Bestäm om detta är en team-turnering (5v5 eller 2v2)
                 is_team_tournament = tournament.game_mode in ['2v2', '5v5']
                 
@@ -281,17 +313,8 @@ class SignupView(discord.ui.View):
                         )
                         return
                     
-                    # Skapa/uppdatera spelarprofil
-                    player = await session.get(Player, interaction.user.id)
-                    if not player:
-                        player = Player(
-                            user_id=interaction.user.id,
-                            guild_id=interaction.guild_id,
-                            username=interaction.user.name
-                        )
-                        session.add(player)
-                    else:
-                        player.username = interaction.user.name
+                    # Uppdatera username
+                    player.username = interaction.user.name
                     
                     # Lägg till participant
                     participant = TournamentParticipant(
@@ -312,8 +335,15 @@ class SignupView(discord.ui.View):
                     except:
                         pass
                     
+                    from utils.elo import get_rank_from_elo
+                    rank = get_rank_from_elo(player.elo_rating)
+                    
                     await interaction.response.send_message(
-                        embed=create_success_embed(f'✅ Du är nu anmäld till **{tournament.name}**!\n\nStarttid: <t:{int(tournament.start_time.timestamp())}:F>'),
+                        embed=create_success_embed(
+                            f'✅ Du är nu anmäld till **{tournament.name}**!\n\n'
+                            f'**Din ELO:** {player.elo_rating} ({rank})\n'
+                            f'**Starttid:** <t:{int(tournament.start_time.timestamp())}:F>'
+                        ),
                         ephemeral=True
                     )
                     
@@ -389,7 +419,6 @@ class SignupView(discord.ui.View):
                     embed=create_error_embed(f'Kunde inte dra dig ur: {str(e)}'),
                     ephemeral=True
                 )
-
 class AdminCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot

@@ -82,6 +82,11 @@ class Player(Base):
     highest_elo = Column(Integer, default=1000)
     win_streak = Column(Integer, default=0)
     best_win_streak = Column(Integer, default=0)
+    elo_verified = Column(Boolean, default=False)  # För att undvika fusk med flera konton
+    cs2_premier_elo = Column(Integer, nullable=True)  # Valfri koppling till CS2 Premier ELO
+    faceit_level = Column(Integer, nullable=True)  # Valfri koppling till Faceit Level
+    faceit_elo = Column(Integer, nullable=True)  # Valfri koppling till Faceit ELO
+    elo_source = Column(String(50), nullable=True)  # 'cs2_premier', 'faceit', etc.
     
     def __repr__(self):
         return f"<Player(user_id={self.user_id}, username='{self.username}', elo={self.elo_rating})>"
