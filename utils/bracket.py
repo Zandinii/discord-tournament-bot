@@ -260,3 +260,61 @@ def get_tournament_winner(matches: List[Match]) -> Optional[int]:
         return final_match.winner_id
     
     return None
+
+def generate_swiss(tournament_id: int, participants: List[TournamentParticipant], round_number: int, previous_results: List[Match]) -> List[Match]:
+    """
+    Generate Swiss tournament pairings for a given round.
+
+    Args:
+        tournament_id: The ID of the tournament.
+        participants: List of participants in the tournament.
+        round_number: The current round number.
+        previous_results: List of matches from previous rounds.
+
+    Returns:
+        List of matches for the current round.
+    """
+    # Calculate scores based on previous results
+    scores = {p.participant_id: 0 for p in participants}
+    for match in previous_results:
+        if match.winner_id:
+            scores[match.winner_id] += 1
+
+    # Sort participants by scores (descending)
+    sorted_participants = sorted(participants, key=lambda p: scores[p.participant_id], reverse=True)
+
+    # Pair participants with similar scores
+    matches = []
+    match_number = 1
+    while len(sorted_participants) > 1:
+        p1 = sorted_participants.pop(0)
+        p2 = sorted_participants.pop(0)
+
+        match = Match(
+            tournament_id=tournament_id,
+            round_number=round_number,
+            match_number=match_number,
+            participant1_id=p1.participant_id,
+            participant2_id=p2.participant_id,
+            status=MatchStatus.PENDING
+        )
+        matches.append(match)
+        match_number += 1
+
+    # Handle odd number of participants (bye)
+    if sorted_participants:
+        p1 = sorted_participants.pop(0)
+        match = Match(
+            tournament_id=tournament_id,
+            round_number=round_number,
+            match_number=match_number,
+            participant1_id=p1.participant_id,
+            participant2_id=None,  # No opponent
+            status=MatchStatus.COMPLETED,
+            winner_id=p1.participant_id,
+            score_p1=1,
+            score_p2=0
+        )
+        matches.append(match)
+
+    return matches

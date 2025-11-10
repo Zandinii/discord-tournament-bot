@@ -31,7 +31,7 @@ class TemplatesCog(commands.Cog):
         interaction: discord.Interaction,
         name: str,
         game_mode: Literal['1v1', '2v2', '5v5'],
-        tournament_type: Literal['single_elim', 'double_elim', 'round_robin'],
+        tournament_type: Literal['single_elim', 'double_elim', 'round_robin', 'swiss'],
         recurring: bool = True,
         day_of_week: Optional[int] = None,
         time: Optional[str] = None,
@@ -97,13 +97,6 @@ class TemplateModal(discord.ui.Modal, title='Template Detaljer'):
         max_length=3
     )
     
-    game_name = discord.ui.TextInput(
-        label='Spel (t.ex. CS2)',
-        placeholder='CS2',
-        required=False,
-        max_length=50
-    )
-    
     map_pool = discord.ui.TextInput(
         label='Kartor (separera med komma)',
         style=discord.TextStyle.paragraph,
@@ -126,7 +119,7 @@ class TemplateModal(discord.ui.Modal, title='Template Detaljer'):
         async with async_session() as session:
             try:
                 max_participants = int(self.max_players.value) if self.max_players.value else 32
-                
+
                 template = TournamentTemplate(
                     guild_id=interaction.guild_id,
                     name=self.template_name,
@@ -135,7 +128,6 @@ class TemplateModal(discord.ui.Modal, title='Template Detaljer'):
                     max_participants=max_participants,
                     prize_description=self.prize.value if self.prize.value else None,
                     description=self.description.value if self.description.value else None,
-                    game_name=self.game_name.value if self.game_name.value else None,
                     map_pool=self.map_pool.value if self.map_pool.value else None,
                     recurring=self.recurring,
                     recurrence_type=self.recurrence if self.recurring else None,
@@ -143,7 +135,7 @@ class TemplateModal(discord.ui.Modal, title='Template Detaljer'):
                     time_of_day=self.time,
                     created_by=interaction.user.id
                 )
-                
+
                 session.add(template)
                 await session.commit()
                 await session.refresh(template)

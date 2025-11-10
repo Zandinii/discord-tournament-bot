@@ -38,7 +38,7 @@ Skapa en ny turnering med wizard.
 
 - `name` (string, required): Turneringens namn
 - `game_mode` (choice, required): 1v1, 2v2, eller 5v5
-- `tournament_type` (choice, required): single_elim, double_elim, round_robin
+- `tournament_type` (choice, required): single_elim, double_elim, round_robin, swiss
 - `max_players` (integer, optional): Max deltagare (default: 32)
 
 **Modal Fields:**

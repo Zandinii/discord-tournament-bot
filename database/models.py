@@ -29,7 +29,8 @@ class Guild(Base):
     tournament_channel_id = Column(Integer, nullable=True)
     lobby_voice_channel_id = Column(Integer, nullable=True)
     notification_role_id = Column(Integer, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime)
+    moderation_channel_id = Column(Integer, nullable=True)
     
     def __repr__(self):
         return f"<Guild(guild_id={self.guild_id})>"
@@ -51,16 +52,15 @@ class Tournament(Base):
     created_by = Column(Integer, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     announcement_message_id = Column(Integer, nullable=True)
-    game_name = Column(String(50), nullable=True)  # CS2, Valorant, etc
     bo_format_groupstage = Column(Integer, default=1)  # Best of 1 eller 3 för gruppspel
     bo_format_playoffs = Column(Integer, default=1)  # Best of 1 eller 3 för slutspel
     map_pool = Column(Text, nullable=True)  # JSON string med kartor: ["Dust2", "Mirage", ...]
     season_id = Column(Integer, ForeignKey('seasons.id'), nullable=True)
-    
+
     # Relationships
     participants = relationship("TournamentParticipant", back_populates="tournament", cascade="all, delete-orphan")
     matches = relationship("Match", back_populates="tournament", cascade="all, delete-orphan")
-    
+
     def __repr__(self):
         return f"<Tournament(id={self.id}, name='{self.name}', status='{self.status.value}')>"
 
@@ -316,7 +316,6 @@ class TournamentTemplate(Base):
     description = Column(Text, nullable=True)
     
     # Map ban system
-    game_name = Column(String(50), nullable=True)
     bo_format_groupstage = Column(Integer, default=1)
     bo_format_playoffs = Column(Integer, default=1)
     map_pool = Column(Text, nullable=True)
@@ -334,3 +333,35 @@ class TournamentTemplate(Base):
     
     def __repr__(self):
         return f"<TournamentTemplate(name='{self.name}', recurring={self.recurring})>"
+    
+class PlayerWarning(Base):
+    __tablename__ = 'player_warnings'
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, nullable=False)
+    guild_id = Column(Integer, ForeignKey('guilds.guild_id'), nullable=False)
+    reason = Column(Text, nullable=False)
+    issued_by = Column(Integer, nullable=False)  # Admin user ID
+    issued_at = Column(DateTime, default=datetime.utcnow)
+    active = Column(Boolean, default=True)
+    
+    def __repr__(self):
+        return f"<PlayerWarning(user_id={self.user_id}, reason='{self.reason}')>"
+
+class PlayerBan(Base):
+    __tablename__ = 'player_bans'
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, nullable=False)
+    guild_id = Column(Integer, ForeignKey('guilds.guild_id'), nullable=False)
+    reason = Column(Text, nullable=False)
+    issued_by = Column(Integer, nullable=False)  # Admin user ID
+    ban_type = Column(String(20), nullable=False)  # 'temporary', 'permanent'
+    tournaments_banned = Column(Integer, nullable=True)  # Antal turneringar (för temporary)
+    tournaments_served = Column(Integer, default=0)  # Antal turneringar som har passerats
+    issued_at = Column(DateTime, default=datetime.utcnow)
+    expires_at = Column(DateTime, nullable=True)  # För custom tid-baserade bans
+    active = Column(Boolean, default=True)
+    
+    def __repr__(self):
+        return f"<PlayerBan(user_id={self.user_id}, type='{self.ban_type}', active={self.active})>"

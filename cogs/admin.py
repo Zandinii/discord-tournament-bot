@@ -52,7 +52,7 @@ class TournamentModal(discord.ui.Modal, title='Skapa Turnering'):
         max_length=1
     )
     
-    def __init__(self, name: str, game_mode: str, tournament_type: str, max_players: int):
+    def __init__(self, name: str, game_mode: str, tournament_type: Literal['single_elim', 'double_elim', 'round_robin', 'swiss'], max_players: int):
         super().__init__()
         self.tournament_name = name
         self.game_mode = game_mode
@@ -407,7 +407,7 @@ class AdminCog(commands.Cog):
         interaction: discord.Interaction,
         name: str,
         game_mode: Literal['1v1', '2v2', '5v5'],
-        tournament_type: Literal['single_elim', 'double_elim', 'round_robin'],
+        tournament_type: Literal['single_elim', 'double_elim', 'round_robin', 'swiss'],
         max_players: int = 32
     ):
         """Skapa en ny turnering med wizard"""

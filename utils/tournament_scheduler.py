@@ -99,11 +99,11 @@ class TournamentScheduler:
             days_until = (template.day_of_week - now.weekday()) % 7
             if days_until == 0:
                 days_until = 7  # Nästa vecka
-            
+
             start_date = now + timedelta(days=days_until)
             hour, minute = map(int, template.time_of_day.split(':'))
             start_time = start_date.replace(hour=hour, minute=minute, second=0, microsecond=0)
-            
+
             # Skapa turnering
             tournament = Tournament(
                 guild_id=template.guild_id,
@@ -116,12 +116,11 @@ class TournamentScheduler:
                 description=template.description,
                 created_by=template.created_by,
                 status=TournamentStatus.SIGNUP,
-                game_name=template.game_name,
                 bo_format_groupstage=template.bo_format_groupstage,
                 bo_format_playoffs=template.bo_format_playoffs,
                 map_pool=template.map_pool
             )
-            
+
             session.add(tournament)
             template.last_created = datetime.utcnow()
             await session.commit()
