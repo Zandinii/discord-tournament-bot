@@ -42,7 +42,7 @@ bot = commands.Bot(command_prefix='!', intents=intents)
 async def load_extensions():
     extensions = ['cogs.admin', 'cogs.player', 'cogs.tournament', 
                   'cogs.match', 'cogs.voice', 'cogs.team', 'cogs.help', 'cogs.season',
-                  'cogs.achievements', 'cogs.templates'
+                  'cogs.achievements', 'cogs.templates', 'cogs.moderation'
     ]
     for ext in extensions:
         try:
