@@ -124,6 +124,44 @@ async def on_command_error(ctx, error):
         logger.error(f'❌ Ett oväntat fel uppstod: {error}', exc_info=True)
         await ctx.send("❌ Ett oväntat fel uppstod: " + str(error) + ". Vänligen kontakta administratören.")
 
+@bot.event
+async def on_member_remove(member: discord.Member):
+    """När en medlem lämnar servern"""
+    try:
+        from database.database import async_session
+        from database.models import Team, TeamMember
+        from sqlalchemy import select, delete
+        
+        async with async_session() as session:
+            # Kolla om medlemmen är i något lag
+            result = await session.execute(
+                select(TeamMember, Team).join(
+                    Team, TeamMember.team_id == Team.id
+                ).where(
+                    TeamMember.user_id == member.id,
+                    Team.guild_id == member.guild.id
+                )
+            )
+            
+            member_teams = result.all()
+            
+            for team_member, team in member_teams:
+                # Om medlemmen är captain, ta bort hela laget
+                if team.captain_id == member.id:
+                    logger.info(f'{member.name} (captain) lämnade servern - tar bort lag {team.name}')
+                    await session.delete(team)
+                else:
+                    # Annars bara ta bort medlemmen från laget
+                    logger.info(f'{member.name} lämnade servern - tar bort från lag {team.name}')
+                    await session.delete(team_member)
+            
+            if member_teams:
+                await session.commit()
+                logger.info(f'Tog bort {member.name} från {len(member_teams)} lag efter att de lämnade servern')
+    
+    except Exception as e:
+        logger.error(f'Fel vid hantering av member_remove för lag: {e}', exc_info=True)
+
 if __name__ == "__main__":
     logger.info("🚀 Startar bot...")
     try:

@@ -554,5 +554,111 @@ class TeamCog(commands.Cog):
                     ephemeral=True
                 )
 
+    @app_commands.command(name="team-transfer", description="Överför captain-rollen till en annan lagmedlem")
+    @app_commands.describe(new_captain="Den nya captainen")
+    async def team_transfer(self, interaction: discord.Interaction, new_captain: discord.User):
+        """Överför captain-rollen till en annan spelare i laget"""
+        
+        if new_captain.bot:
+            await interaction.response.send_message(
+                embed=create_error_embed('Du kan inte göra en bot till captain!'),
+                ephemeral=True
+            )
+            return
+        
+        if new_captain.id == interaction.user.id:
+            await interaction.response.send_message(
+                embed=create_error_embed('Du är redan captain!'),
+                ephemeral=True
+            )
+            return
+        
+        async with async_session() as session:
+            try:
+                # Hitta användarens lag där de är captain
+                result = await session.execute(
+                    select(Team).where(
+                        Team.captain_id == interaction.user.id,
+                        Team.guild_id == interaction.guild_id
+                    )
+                )
+                team = result.scalar_one_or_none()
+                
+                if not team:
+                    await interaction.response.send_message(
+                        embed=create_error_embed('Du är inte captain för något lag!'),
+                        ephemeral=True
+                    )
+                    return
+                
+                # Kolla om den nya captainen är i laget
+                member_check = await session.execute(
+                    select(TeamMember).where(
+                        TeamMember.team_id == team.id,
+                        TeamMember.user_id == new_captain.id
+                    )
+                )
+                
+                if not member_check.scalar_one_or_none():
+                    await interaction.response.send_message(
+                        embed=create_error_embed(f'{new_captain.mention} är inte medlem i ditt lag!'),
+                        ephemeral=True
+                    )
+                    return
+                
+                # Överför captain-rollen
+                old_captain_name = interaction.user.name
+                team.captain_id = new_captain.id
+                await session.commit()
+                
+                embed = discord.Embed(
+                    title="👑 Captain Överförd!",
+                    description=f"Captain-rollen för **{team.name}** har överförts!",
+                    color=discord.Color.gold(),
+                    timestamp=datetime.utcnow()
+                )
+                
+                embed.add_field(
+                    name="Tidigare Captain",
+                    value=interaction.user.mention,
+                    inline=True
+                )
+                
+                embed.add_field(
+                    name="Ny Captain",
+                    value=new_captain.mention,
+                    inline=True
+                )
+                
+                await interaction.response.send_message(embed=embed)
+                
+                # Meddela nya captainen
+                try:
+                    dm_embed = discord.Embed(
+                        title="👑 Du är nu Captain!",
+                        description=f"Du har blivit utsedd till captain för **{team.name}** {f'[{team.tag}]' if team.tag else ''}",
+                        color=discord.Color.gold()
+                    )
+                    dm_embed.add_field(
+                        name="Dina nya rättigheter",
+                        value="• Bjuda in nya medlemmar\n"
+                            "• Anmäla laget till turneringar\n"
+                            "• Överföra captain-rollen\n"
+                            "• Ta bort laget",
+                        inline=False
+                    )
+                    await new_captain.send(embed=dm_embed)
+                except:
+                    pass
+                
+                logger.info(f'{old_captain_name} överförde captain till {new_captain.name} för lag {team.name}')
+                
+            except Exception as e:
+                logger.error(f'Fel vid överföring av captain: {e}', exc_info=True)
+                await interaction.response.send_message(
+                    embed=create_error_embed(f'Kunde inte överföra captain: {str(e)}'),
+                    ephemeral=True
+                )
+
 async def setup(bot):
     await bot.add_cog(TeamCog(bot))
