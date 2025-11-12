@@ -14,6 +14,36 @@ async def get_participant_name(session, participant_id: int, participant_type) -
         player = await session.get(Player, participant_id)
         return player.username if player else f"Spelare {participant_id}"
 
+async def get_participant_display_name(session, participant_id: int, participant_type, game_mode: str) -> str:
+    """
+    Hämta visningsnamn för en deltagare
+    
+    Args:
+        session: Database session
+        participant_id: ID för deltagare
+        participant_type: USER eller TEAM
+        game_mode: Spelläge (för att avgöra om team eller inte)
+    
+    Returns:
+        Formaterat visningsnamn
+    """
+    from database.models import Player, Team, ParticipantType
+    
+    is_team_tournament = game_mode in ['2v2', '5v5']
+    
+    if is_team_tournament:
+        team = await session.get(Team, participant_id)
+        if team:
+            if team.tag:
+                return f"[{team.tag}] {team.name}"
+            return team.name
+        return f"Team {participant_id}"
+    else:
+        player = await session.get(Player, participant_id)
+        if player:
+            return player.username
+        return f"Spelare {participant_id}"
+
 async def get_participant_elo(session, participant_id: int, participant_type) -> int:
     """Hämta ELO för en deltagare (user eller team)"""
     from database.models import Player, Team, ParticipantType

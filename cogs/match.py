@@ -47,8 +47,8 @@ class MapBanView(discord.ui.View):
         self.current_banner = participant1_id  # Börja med team 1
         self.bans_done = 0
         self.bot = bot
-        self.team1_text_channel = None
-        self.team2_text_channel = None
+        self.team1_voice_channel = None  # Voice channel (har text chat)
+        self.team2_voice_channel = None  # Voice channel (har text chat)
         self.message1 = None
         self.message2 = None
         self.ban_timer_task = None
@@ -170,56 +170,7 @@ class MapBanView(discord.ui.View):
         # Uppdatera knappar
         self.create_buttons()
         
-        # Uppdatera båda meddelanden
-        try:
-            if self.message1:
-                await self.message1.edit(embed=embed, view=self)
-            if self.message2:
-                await self.message2.edit(embed=embed, view=self)
-        except Exception as e:
-            logger.error(f'Fel vid uppdatering av embeds: {e}')
-        
-        """Uppdatera båda embed-meddelandena"""
-        embed = discord.Embed(
-            title=f"🗺️ Map Ban Phase - Match {self.match_id}",
-            description=f"**Best of {self.maps_to_keep}**\n\n"
-                       f"Bans: {self.bans_done}/{self.total_bans_needed}",
-            color=discord.Color.orange(),
-            timestamp=datetime.utcnow()
-        )
-        
-        # Tillgängliga kartor
-        if self.available_maps:
-            embed.add_field(
-                name="📋 Tillgängliga Kartor",
-                value="\n".join([f"✅ {m}" for m in self.available_maps]),
-                inline=False
-            )
-        
-        # Bannade kartor
-        if self.banned_maps:
-            banned_text = "\n".join([
-                f"🚫 {b['map']} (Ban #{b['order']})" 
-                for b in self.banned_maps
-            ])
-            embed.add_field(
-                name="🚫 Bannade Kartor",
-                value=banned_text,
-                inline=False
-            )
-        
-        # Vems tur
-        if self.bans_done < self.total_bans_needed:
-            embed.add_field(
-                name="⏳ Väntar på",
-                value=f"<@{self.current_banner}> - 30 sekunder kvar",
-                inline=False
-            )
-        
-        # Uppdatera knappar
-        self.create_buttons()
-        
-        # Uppdatera båda meddelanden
+        # Uppdatera båda meddelanden i voice channel text chats
         try:
             if self.message1:
                 await self.message1.edit(embed=embed, view=self)
@@ -258,13 +209,13 @@ class MapBanView(discord.ui.View):
                 })
                 self.bans_done += 1
                 
-                # Notifiera timeout
-                if self.team1_text_channel:
-                    await self.team1_text_channel.send(
+                # Notifiera timeout i båda voice channel text chats
+                if self.team1_voice_channel:
+                    await self.team1_voice_channel.send(
                         f"⏰ <@{self.current_banner}> fick timeout! **{random_map}** bannades automatiskt."
                     )
-                if self.team2_text_channel:
-                    await self.team2_text_channel.send(
+                if self.team2_voice_channel:
+                    await self.team2_voice_channel.send(
                         f"⏰ <@{self.current_banner}> fick timeout! **{random_map}** bannades automatiskt."
                     )
                 
@@ -323,7 +274,7 @@ class MapBanView(discord.ui.View):
             match.ban_phase_complete = True
             await session.commit()
         
-        # Skapa final embed med ny funktion
+        # Skapa final embed
         from utils.embeds import create_map_ban_complete_embed
         
         final_embed = create_map_ban_complete_embed(
@@ -334,11 +285,11 @@ class MapBanView(discord.ui.View):
             participant2_id=self.participant2_id
         )
         
-        # Skicka till båda channels
-        if self.team1_text_channel:
-            await self.team1_text_channel.send(embed=final_embed)
-        if self.team2_text_channel:
-            await self.team2_text_channel.send(embed=final_embed)
+        # Skicka till båda voice channel text chats
+        if self.team1_voice_channel:
+            await self.team1_voice_channel.send(embed=final_embed)
+        if self.team2_voice_channel:
+            await self.team2_voice_channel.send(embed=final_embed)
         
         logger.info(f'Map ban phase klar för match {self.match_id}')
 

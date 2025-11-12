@@ -2,6 +2,40 @@ import discord
 from datetime import datetime
 from typing import Optional
 
+# Färgschema för embeds
+class EmbedColors:
+    """Konsekvent färgschema för alla embeds"""
+    
+    # Status färger
+    SUCCESS = 0x00FF00  # Grön - Positiva åtgärder
+    ERROR = 0xFF0000    # Röd - Fel och negativa åtgärder
+    WARNING = 0xFF9900  # Orange - Varningar och pending
+    INFO = 0x0099FF     # Blå - Information och neutralt
+    
+    # Feature färger
+    TOURNAMENT = 0xFFD700  # Guld - Turneringar
+    MATCH = 0x0099FF       # Blå - Matcher
+    PROFILE = 0x9B59B6     # Lila - Profiler och stats
+    TEAM = 0x00FF00        # Grön - Lag
+    MODERATION = 0xFF0000  # Röd - Moderation
+    SEASON = 0x3498DB      # Ljusblå - Säsonger
+    LEADERBOARD = 0xFFD700 # Guld - Leaderboards
+    
+    # Match status färger
+    MATCH_PENDING = 0xFF9900   # Orange
+    MATCH_ONGOING = 0x0099FF   # Blå
+    MATCH_COMPLETED = 0x00FF00 # Grön
+    MATCH_DISPUTED = 0xFF0000  # Röd
+    
+    # ELO tier färger (från elo.py)
+    BRONZE = 0xCD7F32
+    SILVER = 0xC0C0C0
+    GOLD = 0xFFD700
+    PLATINUM = 0xE5E4E2
+    DIAMOND = 0xB9F2FF
+    MASTER = 0xFFA500
+    PROFESSIONAL = 0xFF1493
+
 def create_tournament_announcement(tournament, participant_count: int = 0) -> discord.Embed:
     """Skapa announcement embed för ny turnering"""
     
@@ -64,9 +98,18 @@ def create_match_embed(match, participant1_name: str, participant2_name: str,
                        p1_elo: Optional[int] = None, p2_elo: Optional[int] = None) -> discord.Embed:
     """Skapa match-kort"""
     
+    # Färg baserat på status
+    color_map = {
+        'pending': 0xFF9900,  # Orange
+        'ongoing': 0x0099FF,  # Blå
+        'completed': 0x00FF00,  # Grön
+        'disputed': 0xFF0000  # Röd
+    }
+    
     embed = discord.Embed(
         title=f"⚔️ Match #{match.match_number} - Round {match.round_number}",
-        color=discord.Color.blue(),
+        description=f"**Match ID: `{match.id}`**",
+        color=color_map.get(match.status.value, 0x0099FF),
         timestamp=datetime.utcnow()
     )
     
@@ -119,7 +162,7 @@ def create_match_embed(match, participant1_name: str, participant2_name: str,
             inline=False
         )
     
-    embed.set_footer(text=f"Match ID: {match.id}")
+    embed.set_footer(text=f"Match ID: {match.id} | Använd detta ID för att rapportera resultat")
     
     return embed
 

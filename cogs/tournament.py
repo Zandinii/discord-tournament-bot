@@ -75,6 +75,70 @@ async def auto_setup_matches(bot, guild_id: int, tournament_id: int):
     except Exception as e:
         logger.error(f'Fel vid auto-setup: {e}', exc_info=True)
 
+async def update_lobby_bracket(bot, guild_id: int, tournament_id: int):
+    """Uppdatera bracket embed i lobby voice channel text chat"""
+    try:
+        from database.models import Guild
+        from utils.embeds import create_bracket_embed_async
+        from utils.bracket import get_bracket_structure
+        
+        async with async_session() as session:
+            # Hämta guild config för lobby channel
+            guild_config = await session.get(Guild, guild_id)
+            if not guild_config or not guild_config.lobby_voice_channel_id:
+                logger.warning(f'Ingen lobby channel satt för guild {guild_id}')
+                return
+            
+            guild = bot.get_guild(guild_id)
+            if not guild:
+                return
+            
+            lobby_channel = guild.get_channel(guild_config.lobby_voice_channel_id)
+            if not lobby_channel:
+                return
+            
+            # Hämta turnering och matcher
+            tournament = await session.get(Tournament, tournament_id)
+            if not tournament:
+                return
+            
+            result = await session.execute(
+                select(Match).where(Match.tournament_id == tournament_id)
+            )
+            matches = result.scalars().all()
+            
+            if not matches:
+                return
+            
+            # Hitta aktuellt round
+            bracket_structure = get_bracket_structure(tournament_id, matches)
+            current_round = 1
+            for rnd in sorted(bracket_structure.keys()):
+                round_matches = bracket_structure[rnd]
+                if any(m.status != MatchStatus.COMPLETED for m in round_matches):
+                    current_round = rnd
+                    break
+            
+            # Skapa bracket embed med async version (visar riktiga namn)
+            embed = await create_bracket_embed_async(session, tournament, matches, current_round)
+            
+            # Försök hitta befintligt bracket meddelande
+            bracket_message_found = False
+            async for message in lobby_channel.history(limit=50):
+                if message.author == bot.user and message.embeds:
+                    if message.embeds[0].title and "Bracket" in message.embeds[0].title:
+                        await message.edit(embed=embed)
+                        bracket_message_found = True
+                        logger.info(f'Uppdaterade bracket i lobby för turnering {tournament_id}')
+                        break
+            
+            # Om inget meddelande hittades, skapa nytt
+            if not bracket_message_found:
+                await lobby_channel.send(embed=embed)
+                logger.info(f'Skapade nytt bracket meddelande i lobby för turnering {tournament_id}')
+    
+    except Exception as e:
+        logger.error(f'Fel vid uppdatering av lobby bracket: {e}', exc_info=True)
 class TournamentCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -157,6 +221,13 @@ class TournamentCog(commands.Cog):
                 
                  # Auto-setup första rundan (lägg till denna)
                 await auto_setup_matches(
+                    self.bot,
+                    interaction.guild_id,
+                    tournament_id
+                )
+
+                # Skapa initial bracket i lobby
+                await update_lobby_bracket(
                     self.bot,
                     interaction.guild_id,
                     tournament_id

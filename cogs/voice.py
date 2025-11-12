@@ -71,12 +71,14 @@ class VoiceCog(commands.Cog):
     
     async def create_match_channels(self, guild: discord.Guild, match: Match, tournament: Tournament) -> tuple[Optional[discord.VoiceChannel], Optional[discord.VoiceChannel]]:
         """
-        Skapa temporära voice channels för en match.
+        Skapa temporära voice channels för en match med rätt namn.
         
         Returns:
             Tuple med (team1_channel, team2_channel)
         """
         try:
+            from database.models import Team, Player, ParticipantType
+            
             # Skapa kategori om den inte finns
             category_name = f"🎮 {tournament.name}"
             category = discord.utils.get(guild.categories, name=category_name)
@@ -88,20 +90,49 @@ class VoiceCog(commands.Cog):
                 )
                 logger.info(f'Skapade kategori: {category_name}')
             
-            # Skapa voice channels för båda lagen
+            # Bestäm namn för voice channels baserat på deltagare
+            is_team_tournament = tournament.game_mode in ['2v2', '5v5']
+            
+            async with async_session() as session:
+                if is_team_tournament:
+                    # Team turnering - använd lagnamn
+                    team1 = await session.get(Team, match.participant1_id)
+                    team2 = await session.get(Team, match.participant2_id)
+                    
+                    team1_name = team1.name if team1 else f"Team {match.participant1_id}"
+                    team2_name = team2.name if team2 else f"Team {match.participant2_id}"
+                    
+                    # Lägg till tag om det finns
+                    if team1 and team1.tag:
+                        team1_name = f"[{team1.tag}] {team1.name}"
+                    if team2 and team2.tag:
+                        team2_name = f"[{team2.tag}] {team2.name}"
+                else:
+                    # 1v1 - använd spelarnamn
+                    player1 = await session.get(Player, match.participant1_id)
+                    player2 = await session.get(Player, match.participant2_id)
+                    
+                    team1_name = player1.username if player1 else f"Spelare {match.participant1_id}"
+                    team2_name = player2.username if player2 else f"Spelare {match.participant2_id}"
+            
+            # Begränsa längd på namn (Discord max 100 tecken för channel namn)
+            team1_name = team1_name[:50] if len(team1_name) > 50 else team1_name
+            team2_name = team2_name[:50] if len(team2_name) > 50 else team2_name
+            
+            # Skapa voice channels med rätt namn
             team1_channel = await guild.create_voice_channel(
-                name=f"🔵 Match {match.match_number} - Team 1",
+                name=f"🔵 {team1_name}",
                 category=category,
-                reason=f"Match {match.id}"
+                reason=f"Match {match.id} - Round {match.round_number}"
             )
             
             team2_channel = await guild.create_voice_channel(
-                name=f"🔴 Match {match.match_number} - Team 2",
+                name=f"🔴 {team2_name}",
                 category=category,
-                reason=f"Match {match.id}"
+                reason=f"Match {match.id} - Round {match.round_number}"
             )
             
-            logger.info(f'Skapade voice channels för match {match.id}')
+            logger.info(f'Skapade voice channels för match {match.id}: "{team1_name}" vs "{team2_name}"')
             
             return team1_channel, team2_channel
             
@@ -111,7 +142,7 @@ class VoiceCog(commands.Cog):
         except Exception as e:
             logger.error(f'Fel vid skapande av voice channels: {e}', exc_info=True)
             return None, None
-    
+
     async def move_players_to_channels(
         self, 
         guild: discord.Guild, 
@@ -158,15 +189,15 @@ class VoiceCog(commands.Cog):
             return moved_team1, moved_team2
         
     async def start_map_ban_phase(
-    self,
-    guild: discord.Guild,
-    match: Match,
-    tournament: Tournament,
-    team1_channel: discord.VoiceChannel,
-    team2_channel: discord.VoiceChannel
-):
+        self,
+        guild: discord.Guild,
+        match: Match,
+        tournament: Tournament,
+        team1_channel: discord.VoiceChannel,
+        team2_channel: discord.VoiceChannel
+    ):
         """
-        Starta map ban-fasen för en match.
+        Starta map ban-fasen för en match i voice channel text chat.
         """
         try:
             # Kolla om map pool finns
@@ -175,7 +206,6 @@ class VoiceCog(commands.Cog):
                 return
             
             # Parse map pool
-            import json
             try:
                 maps = [m.strip() for m in tournament.map_pool.split(',')]
             except:
@@ -187,7 +217,6 @@ class VoiceCog(commands.Cog):
                 return
             
             # Bestäm vilket round vi är i (groupstage vs playoffs)
-            # För enkelhetens skull: round 1-2 = groupstage, 3+ = playoffs
             bo_format = tournament.bo_format_groupstage if match.round_number <= 2 else tournament.bo_format_playoffs
             
             # Beräkna antal bans som behövs
@@ -195,34 +224,11 @@ class VoiceCog(commands.Cog):
             total_bans = len(maps) - maps_needed
             
             if total_bans <= 0:
-                # Inte tillräckligt med kartor för att banna
                 logger.info(f'Inte tillräckligt med kartor för ban phase')
                 return
             
-            # Hitta text channels för voice channels
-            team1_text = None
-            team2_text = None
-            
-            for channel in guild.text_channels:
-                if team1_channel.name in channel.name or f"match-{match.match_number}-team-1" in channel.name:
-                    team1_text = channel
-                if team2_channel.name in channel.name or f"match-{match.match_number}-team-2" in channel.name:
-                    team2_text = channel
-            
-            # Om text channels inte finns, skapa dem
-            if not team1_text:
-                team1_text = await guild.create_text_channel(
-                    name=f"match-{match.match_number}-team-1",
-                    category=team1_channel.category,
-                    reason=f"Map ban för match {match.id}"
-                )
-            
-            if not team2_text:
-                team2_text = await guild.create_text_channel(
-                    name=f"match-{match.match_number}-team-2",
-                    category=team2_channel.category,
-                    reason=f"Map ban för match {match.id}"
-                )
+            # Använd voice channel text chats direkt!
+            # Discord voice channels har automatiskt text chat
             
             # Skapa ban view och embeds
             from cogs.match import MapBanView
@@ -238,13 +244,13 @@ class VoiceCog(commands.Cog):
                 bot=self.bot
             )
             
-            # Skapa initial embed för båda lagen
+            # Skapa initial embed
             embed = discord.Embed(
-                title=f"🗺️ Map Ban Phase - Match {match.match_number}",
-                description=f"**Best of {bo_format}**\n\n"
+                title=f"🗺️ Map Ban Phase",
+                description=f"**Match ID: `{match.id}`**\n**Best of {bo_format}**\n\n"
                         f"Lagkaptener, banna {total_bans} kartor!\n"
                         f"Ni har 30 sekunder per ban.",
-                color=discord.Color.orange(),
+                color=0xFF9900,
                 timestamp=datetime.utcnow()
             )
             
@@ -262,9 +268,18 @@ class VoiceCog(commands.Cog):
             
             embed.set_footer(text=f"Match ID: {match.id}")
             
-            # Skicka till båda team channels
-            msg1 = await team1_text.send(embed=embed, view=view)
-            msg2 = await team2_text.send(embed=embed, view=view)
+            # Skicka SAMMA meddelande till båda voice channels text chat
+            # (Voice channels har automatisk text chat som är synlig för alla i kanalen)
+            msg1 = await team1_channel.send(
+                content=f"<@{match.participant1_id}> <@{match.participant2_id}>",
+                embed=embed,
+                view=view
+            )
+            msg2 = await team2_channel.send(
+                content=f"<@{match.participant1_id}> <@{match.participant2_id}>",
+                embed=embed,
+                view=view
+            )
             
             # Spara message IDs
             async with async_session() as session:
@@ -273,13 +288,16 @@ class VoiceCog(commands.Cog):
                 match_db.ban_message_id_team2 = msg2.id
                 await session.commit()
             
-            # Starta ban-processen
-            view.team1_text_channel = team1_text
-            view.team2_text_channel = team2_text
+            # Sätt upp view references
+            view.team1_voice_channel = team1_channel
+            view.team2_voice_channel = team2_channel
             view.message1 = msg1
             view.message2 = msg2
             
-            logger.info(f'Startade map ban phase för match {match.id}')
+            # Starta timeout timer
+            view.ban_timer_task = asyncio.create_task(view.ban_timeout())
+            
+            logger.info(f'Startade map ban phase för match {match.id} i voice channel text chats')
             
         except Exception as e:
             logger.error(f'Fel vid start av map ban phase: {e}', exc_info=True)
