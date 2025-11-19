@@ -370,3 +370,52 @@ class PlayerBan(Base):
     
     def __repr__(self):
         return f"<PlayerBan(user_id={self.user_id}, type='{self.ban_type}', active={self.active})>"
+
+class PlayerSteamID(Base):
+    __tablename__ = 'player_steamids'
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, nullable=False, unique=True)
+    guild_id = Column(Integer, ForeignKey('guilds.guild_id'), nullable=False)
+    steam_id = Column(String(100), nullable=False)  # SteamID64 format
+    verified = Column(Boolean, default=False)
+    added_at = Column(DateTime, default=datetime.utcnow)
+    
+    def __repr__(self):
+        return f"<PlayerSteamID(user_id={self.user_id}, steam_id='{self.steam_id}')>"
+
+
+class CS2ServerConfig(Base):
+    __tablename__ = 'cs2_server_config'
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    guild_id = Column(Integer, ForeignKey('guilds.guild_id'), nullable=False, unique=True)
+    ptero_panel_url = Column(String(255), nullable=False)
+    ptero_server_uuid = Column(String(100), nullable=False)
+    server_ip = Column(String(50), nullable=False)
+    server_port = Column(Integer, default=27015)
+    rcon_password = Column(String(100), nullable=True)
+    server_password = Column(String(100), nullable=True)
+    auto_shutdown_delay = Column(Integer, default=300)  # 5 minuter efter match
+    enabled = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    def __repr__(self):
+        return f"<CS2ServerConfig(guild_id={self.guild_id}, enabled={self.enabled})>"
+
+
+class MatchServerLog(Base):
+    __tablename__ = 'match_server_logs'
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    match_id = Column(Integer, ForeignKey('matches.id', ondelete='CASCADE'), nullable=False)
+    server_started_at = Column(DateTime, nullable=True)
+    server_ready_at = Column(DateTime, nullable=True)
+    server_stopped_at = Column(DateTime, nullable=True)
+    config_sent = Column(Boolean, default=False)
+    players_connected = Column(Text, nullable=True)  # JSON array av SteamIDs
+    errors = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    def __repr__(self):
+        return f"<MatchServerLog(match_id={self.match_id})>"

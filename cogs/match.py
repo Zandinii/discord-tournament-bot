@@ -21,6 +21,24 @@ import asyncio
 
 logger = logging.getLogger('TournamentBot.Match')
 
+async def trigger_match_created_event(bot, match_id: int):
+    """Trigga match_created event för CS2 automation"""
+    try:
+        # Dispatcha event till alla cogs som lyssnar
+        bot.dispatch('match_created', match_id)
+        logger.info(f'🎮 Triggered match_created event för match {match_id}')
+    except Exception as e:
+        logger.error(f'Fel vid triggering av match_created event: {e}')
+
+
+async def trigger_match_completed_event(bot, match_id: int):
+    """Trigga match_completed event för CS2 automation"""
+    try:
+        bot.dispatch('match_completed', match_id)
+        logger.info(f'✅ Triggered match_completed event för match {match_id}')
+    except Exception as e:
+        logger.error(f'Fel vid triggering av match_completed event: {e}')
+
 class MapBanView(discord.ui.View):
     """View för map bans med knappar"""
     
@@ -651,6 +669,7 @@ class MatchResultView(discord.ui.View):
                     next_match_text = ""
                 
                 await session.commit()
+
                 
                 # Cleanup voice channels (lägg till denna)
                 await cleanup_voice_after_match(
@@ -658,6 +677,8 @@ class MatchResultView(discord.ui.View):
                     interaction.guild_id, 
                     self.match_id
                 )
+
+                await trigger_match_completed_event(interaction.client, self.match_id)
 
                 # Disable buttons
                 for item in self.children:

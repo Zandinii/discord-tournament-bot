@@ -16,14 +16,19 @@ from utils.bracket import (
     generate_single_elimination, generate_round_robin,
     calculate_total_rounds, get_bracket_structure
 )
+from cogs.match import trigger_match_created_event
 from sqlalchemy import select
 import logging
+
 
 logger = logging.getLogger('TournamentBot.Tournament')
 
 async def auto_setup_matches(bot, guild_id: int, tournament_id: int):
     """Automatiskt sätt upp voice channels för första rundan"""
     try:
+        from cogs.match import trigger_match_created_event
+        from discord import Self
+        
         guild = bot.get_guild(guild_id)
         if not guild:
             return
@@ -70,6 +75,7 @@ async def auto_setup_matches(bot, guild_id: int, tournament_id: int):
                     )
             
             await session.commit()
+            await trigger_match_created_event(Self.bot, match.id)
             logger.info(f'Auto-setup {len(matches)} matcher för turnering {tournament_id}')
             
     except Exception as e:
