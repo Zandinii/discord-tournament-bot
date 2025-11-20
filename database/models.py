@@ -170,6 +170,7 @@ class Match(Base):
     
     # Relationships
     tournament = relationship("Tournament", back_populates="matches")
+    server_logs = relationship("MatchServerLog", back_populates="match", cascade="all, delete-orphan")
     
     def __repr__(self):
         return f"<Match(id={self.id}, round={self.round_number}, status='{self.status.value}')>"
@@ -410,6 +411,7 @@ class MatchServerLog(Base):
     
     id = Column(Integer, primary_key=True, autoincrement=True)
     match_id = Column(Integer, ForeignKey('matches.id', ondelete='CASCADE'), nullable=False)
+    server_num = Column(Integer, nullable=True)
     server_started_at = Column(DateTime, nullable=True)
     server_ready_at = Column(DateTime, nullable=True)
     server_stopped_at = Column(DateTime, nullable=True)
@@ -417,6 +419,8 @@ class MatchServerLog(Base):
     players_connected = Column(Text, nullable=True)  # JSON array av SteamIDs
     errors = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+    match = relationship('Match', back_populates='server_logs')
     
     def __repr__(self):
         return f"<MatchServerLog(match_id={self.match_id})>"

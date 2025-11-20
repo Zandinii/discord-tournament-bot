@@ -5,6 +5,7 @@ Admin commands och event handlers för CS2 server automation
 
 import discord
 import asyncio
+import os
 from discord import app_commands
 from discord.ext import commands
 from typing import Optional
@@ -315,7 +316,6 @@ class CS2ServerCog(commands.Cog):
     @is_tournament_admin()
     async def cs2_status(self, interaction: discord.Interaction):
         """Visa CS2 server konfiguration och status"""
-        
         async with async_session() as session:
             try:
                 result = await session.execute(
@@ -346,7 +346,7 @@ class CS2ServerCog(commands.Cog):
                 recent_logs = await session.execute(
                     select(MatchServerLog).order_by(
                         MatchServerLog.created_at.desc()
-                    ).limit(5)
+                    ).limit(10)
                 )
                 logs = recent_logs.scalars().all()
                 
@@ -362,29 +362,70 @@ class CS2ServerCog(commands.Cog):
                     inline=True
                 )
                 
+                # Visa båda servrarna
+                server_ip = os.getenv('CS2_SERVER_IP', config.server_ip)
+                server1_port = os.getenv('CS2_SERVER1_PORT', '27015')
+                server2_port = os.getenv('CS2_SERVER2_PORT', '27016')
+                
+                # Kolla vilka servrar som är i bruk
+                server1_status = "🟢 Ledig"
+                server2_status = "🟢 Ledig"
+                
+                for match_id, (client, server_num) in self.server_manager.active_servers.items():
+                    if server_num == 1:
+                        server1_status = f"🔴 Upptagen (Match {match_id})"
+                    elif server_num == 2:
+                        server2_status = f"🔴 Upptagen (Match {match_id})"
+                
                 embed.add_field(
-                    name="📡 Server",
-                    value=f"`{config.server_ip}:{config.server_port}`",
+                    name="🖥️ Server 1",
+                    value=f"`{server_ip}:{server1_port}`\n{server1_status}",
+                    inline=True
+                )
+                
+                embed.add_field(
+                    name="🖥️ Server 2",
+                    value=f"`{server_ip}:{server2_port}`\n{server2_status}",
                     inline=True
                 )
                 
                 embed.add_field(
                     name="👥 Länkade SteamIDs",
                     value=f"{total_steamids} spelare",
-                    inline=True
+                    inline=False
                 )
                 
                 if logs:
-                    logs_text = ""
-                    for log in logs:
-                        status_icon = "✅" if log.config_sent else "❌"
-                        logs_text += f"{status_icon} Match {log.match_id} - <t:{int(log.created_at.timestamp())}:R>\n"
+                    # Gruppera logs per server
+                    server1_logs = [log for log in logs if log.server_num == 1][:3]
+                    server2_logs = [log for log in logs if log.server_num == 2][:3]
                     
-                    embed.add_field(
-                        name="📋 Senaste Server Sessions",
-                        value=logs_text,
-                        inline=False
-                    )
+                    if server1_logs:
+                        logs_text = ""
+                        for log in server1_logs:
+                            status_icon = "✅" if log.config_sent else "❌"
+                            logs_text += f"{status_icon} Match {log.match_id} - <t:{int(log.created_at.timestamp())}:R>\n"
+                        
+                        embed.add_field(
+                            name="📋 Server 1 - Senaste Sessions",
+                            value=logs_text,
+                            inline=True
+                        )
+                    
+                    if server2_logs:
+                        logs_text = ""
+                        for log in server2_logs:
+                            status_icon = "✅" if log.config_sent else "❌"
+                            logs_text += f"{status_icon} Match {log.match_id} - <t:{int(log.created_at.timestamp())}:R>\n"
+                        
+                        embed.add_field(
+                            name="📋 Server 2 - Senaste Sessions",
+                            value=logs_text,
+                            inline=True
+                        )
+                
+                # Lägg till info om concurrent capacity
+                embed.set_footer(text="🔄 Systemet kan hantera 2 matcher samtidigt")
                 
                 await interaction.response.send_message(embed=embed, ephemeral=True)
             

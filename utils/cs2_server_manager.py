@@ -1,12 +1,14 @@
 """
 CS2 Server Manager
 Hanterar automatisk server-start, konfiguration och match-setup
+MED STÖD FÖR FLERA SERVRAR
 """
 
 import asyncio
 import logging
 import json
-from typing import Optional, List, Dict, Any
+import os
+from typing import Optional, List, Dict, Any, Tuple
 from datetime import datetime
 from sqlalchemy import select
 import discord
@@ -23,18 +25,19 @@ logger = logging.getLogger('TournamentBot.CS2ServerManager')
 
 class CS2ServerManager:
     """
-    Manager för CS2 server automation
+    Manager för CS2 server automation med multi-server stöd
     Hanterar hela flödet från server-start till match-setup
     """
     
     def __init__(self, bot):
         self.bot = bot
-        self.active_servers: Dict[int, PterodactylClient] = {}  # match_id: client
+        self.active_servers: Dict[int, Tuple[PterodactylClient, int]] = {}  # match_id: (client, server_num)
+        self.server_locks: Dict[int, asyncio.Lock] = {1: asyncio.Lock(), 2: asyncio.Lock()}
+        self.server_in_use: Dict[int, Optional[int]] = {1: None, 2: None}  # server_num: match_id
     
     async def get_server_config(self, guild_id: int) -> Optional[CS2ServerConfig]:
         """Hämta server-konfiguration för guild"""
         async with async_session() as session:
-            from sqlalchemy import select
             result = await session.execute(
                 select(CS2ServerConfig).where(
                     CS2ServerConfig.guild_id == guild_id,
@@ -43,14 +46,94 @@ class CS2ServerManager:
             )
             return result.scalar_one_or_none()
     
+    async def get_available_server(self) -> Optional[int]:
+        """
+        Hitta en ledig server
+        Returns: Server nummer (1 eller 2) eller None om alla upptagna
+        """
+        for server_num in [1, 2]:
+            lock = self.server_locks[server_num]
+            if not lock.locked():
+                # Kolla om servern faktiskt är ledig
+                if self.server_in_use[server_num] is None:
+                    return server_num
+        
+        # Ingen server ledig
+        return None
+    
+    async def acquire_server(self, match_id: int) -> Optional[int]:
+        """
+        Försök få tillgång till en ledig server
+        Returns: Server nummer eller None
+        """
+        server_num = await self.get_available_server()
+        if server_num is None:
+            logger.warning(f'⏳ Alla servrar upptagna, väntar på ledig server för match {match_id}')
+            # Vänta max 5 minuter på att en server ska bli ledig
+            timeout = 300
+            start_time = asyncio.get_event_loop().time()
+            
+            while (asyncio.get_event_loop().time() - start_time) < timeout:
+                await asyncio.sleep(10)
+                server_num = await self.get_available_server()
+                if server_num is not None:
+                    break
+            
+            if server_num is None:
+                logger.error(f'❌ Timeout: Ingen server blev ledig för match {match_id}')
+                return None
+        
+        # Lås servern
+        await self.server_locks[server_num].acquire()
+        self.server_in_use[server_num] = match_id
+        logger.info(f'🔒 Server {server_num} tilldelad till match {match_id}')
+        return server_num
+    
+    async def release_server(self, match_id: int, server_num: int):
+        """Frigör en server efter användning"""
+        try:
+            if self.server_in_use.get(server_num) == match_id:
+                self.server_in_use[server_num] = None
+                self.server_locks[server_num].release()
+                logger.info(f'🔓 Server {server_num} frigjord från match {match_id}')
+        except Exception as e:
+            logger.error(f'Fel vid frigörning av server: {e}')
+    
+    async def create_pterodactyl_client(
+        self, 
+        server_num: int, 
+        config: CS2ServerConfig
+    ) -> PterodactylClient:
+        """
+        Skapa Pterodactyl client för specifik server
+        """
+        from utils.pterodactyl_client import create_pterodactyl_client
+        
+        # Hämta rätt UUID från env
+        server_uuid_key = f'PTERO_SERVER{server_num}_UUID'
+        server_uuid = os.getenv(server_uuid_key)
+        
+        if not server_uuid:
+            raise ValueError(f'Miljövariabel {server_uuid_key} saknas!')
+        
+        return await create_pterodactyl_client(
+            panel_url=config.ptero_panel_url or os.getenv('PTERO_PANEL_URL'),
+            api_key=os.getenv('PTERO_API_KEY'),
+            server_uuid=server_uuid
+        )
+    
+    def get_server_port(self, server_num: int) -> int:
+        """Hämta rätt port för server"""
+        port_key = f'CS2_SERVER{server_num}_PORT'
+        port = os.getenv(port_key)
+        return int(port) if port else (27015 if server_num == 1 else 27016)
+    
     async def get_player_steamids(self, match_id: int) -> Dict[int, str]:
         """
         Hämta SteamIDs för alla spelare i en match
         Returns: {user_id: steam_id}
         """
         async with async_session() as session:
-            from sqlalchemy import select, or_
-            
             # Hämta match
             match = await session.get(Match, match_id)
             if not match:
@@ -148,14 +231,9 @@ class CS2ServerManager:
                     commands.append(f'sv_password "{config.server_password}"')
         
         # SteamID Whitelist
-        # OBS: Detta kräver ofta ett plugin som SourceMod
-        # Här är ett exempel med generic kommandon
         if steamids:
             commands.append('# SteamID Whitelist')
-            # Exempel med hypothetical whitelist plugin:
-            # commands.append('sm_whitelist_clear')
             for user_id, steam_id in steamids.items():
-                # commands.append(f'sm_whitelist_add "{steam_id}"')
                 commands.append(f'# Allow: {steam_id}')
         
         return commands
@@ -165,13 +243,15 @@ class CS2ServerManager:
         Huvudfunktion: Sätt upp server för en match
         
         Flöde:
-        1. Starta server
-        2. Vänta tills running
-        3. Konfigurera match
-        4. Notifiera spelare
+        1. Hitta ledig server
+        2. Starta server
+        3. Vänta tills running
+        4. Konfigurera match
+        5. Notifiera spelare
         
         Returns: True om success
         """
+        server_num = None
         try:
             async with async_session() as session:
                 # Hämta match
@@ -192,40 +272,43 @@ class CS2ServerManager:
                     logger.error(f'Ingen CS2 server config för guild {tournament.guild_id}')
                     return False
                 
-                # Skapa Pterodactyl client
-                from utils.pterodactyl_client import create_pterodactyl_client
-                import os
+                # STEG 1: Hitta och låsa en ledig server
+                server_num = await self.acquire_server(match_id)
+                if server_num is None:
+                    logger.error(f'❌ Ingen server tillgänglig för match {match_id}')
+                    return False
                 
-                ptero_client = await create_pterodactyl_client(
-                    panel_url=config.ptero_panel_url or os.getenv('PTERO_PANEL_URL'),
-                    api_key=os.getenv('PTERO_API_KEY'),
-                    server_uuid=config.ptero_server_uuid or os.getenv('PTERO_SERVER_UUID')
-                )
-                
-                self.active_servers[match_id] = ptero_client
+                # Skapa Pterodactyl client för rätt server
+                ptero_client = await self.create_pterodactyl_client(server_num, config)
+                self.active_servers[match_id] = (ptero_client, server_num)
                 
                 # Skapa server log
-                server_log = MatchServerLog(match_id=match_id)
+                server_log = MatchServerLog(
+                    match_id=match_id,
+                    server_num=server_num  # Spara vilket server som används
+                )
                 session.add(server_log)
                 await session.commit()
                 await session.refresh(server_log)
                 
-                logger.info(f'🚀 Startar CS2 server för match {match_id}...')
+                logger.info(f'🚀 Startar CS2 Server {server_num} för match {match_id}...')
                 
-                # 1. STARTA SERVER
+                # STEG 2: STARTA SERVER
                 if not await ptero_client.start_server():
-                    server_log.errors = 'Kunde inte starta server'
+                    server_log.errors = f'Kunde inte starta server {server_num}'
                     await session.commit()
+                    await self.release_server(match_id, server_num)
                     return False
                 
                 server_log.server_started_at = datetime.utcnow()
                 await session.commit()
                 
-                # 2. VÄNTA TILLS SERVER ÄR RUNNING
-                logger.info('⏳ Väntar på att server ska bli redo...')
+                # STEG 3: VÄNTA TILLS SERVER ÄR RUNNING
+                logger.info(f'⏳ Väntar på att Server {server_num} ska bli redo...')
                 if not await ptero_client.wait_for_running(timeout=180, poll_interval=5):
-                    server_log.errors = 'Server timeout - blev inte running'
+                    server_log.errors = f'Server {server_num} timeout - blev inte running'
                     await session.commit()
+                    await self.release_server(match_id, server_num)
                     return False
                 
                 server_log.server_ready_at = datetime.utcnow()
@@ -234,7 +317,7 @@ class CS2ServerManager:
                 # Extra väntetid för att server ska initiera helt
                 await asyncio.sleep(10)
                 
-                # 3. HÄMTA STEAMIDS
+                # STEG 4: HÄMTA STEAMIDS
                 steamids = await self.get_player_steamids(match_id)
                 if not steamids:
                     logger.warning(f'⚠️ Inga SteamIDs hittades för match {match_id}')
@@ -242,8 +325,8 @@ class CS2ServerManager:
                 server_log.players_connected = json.dumps(list(steamids.values()))
                 await session.commit()
                 
-                # 4. GENERERA & SKICKA MATCH CONFIG
-                logger.info('⚙️ Konfigurerar match...')
+                # STEG 5: GENERERA & SKICKA MATCH CONFIG
+                logger.info(f'⚙️ Konfigurerar match på Server {server_num}...')
                 commands = await self.generate_match_config(match, tournament, steamids)
                 
                 success_count = await ptero_client.send_commands_batch(commands, delay=0.5)
@@ -252,14 +335,19 @@ class CS2ServerManager:
                 server_log.config_sent = True
                 await session.commit()
                 
-                # 5. NOTIFIERA SPELARE
-                await self.notify_players(match, config)
+                # STEG 6: NOTIFIERA SPELARE
+                server_port = self.get_server_port(server_num)
+                await self.notify_players(match, config, server_num, server_port)
                 
-                logger.info(f'✅ Server setup komplett för match {match_id}')
+                logger.info(f'✅ Server {server_num} setup komplett för match {match_id}')
                 return True
         
         except Exception as e:
             logger.error(f'❌ Fel vid server setup för match {match_id}: {e}', exc_info=True)
+            
+            # Frigör server om något gick fel
+            if server_num:
+                await self.release_server(match_id, server_num)
             
             # Logga error i databas
             try:
@@ -276,7 +364,13 @@ class CS2ServerManager:
             
             return False
     
-    async def notify_players(self, match: Match, config: CS2ServerConfig):
+    async def notify_players(
+        self, 
+        match: Match, 
+        config: CS2ServerConfig, 
+        server_num: int,
+        server_port: int
+    ):
         """
         Skicka connect-info till spelare via Discord voice channel text chats
         """
@@ -285,13 +379,14 @@ class CS2ServerManager:
             if not guild:
                 return
             
-            connect_string = f"connect {config.server_ip}:{config.server_port}"
+            server_ip = os.getenv('CS2_SERVER_IP', config.server_ip)
+            connect_string = f"connect {server_ip}:{server_port}"
             if config.server_password:
                 connect_string += f"; password {config.server_password}"
             
             embed = discord.Embed(
-                title="🎮 Server Redo!",
-                description="CS2-servern är redo för match!",
+                title=f"🎮 Server {server_num} Redo!",
+                description=f"CS2-servern är redo för match!",
                 color=discord.Color.green()
             )
             
@@ -303,7 +398,7 @@ class CS2ServerManager:
             
             embed.add_field(
                 name="ℹ️ Info",
-                value=f"Server: `{config.server_ip}:{config.server_port}`\n"
+                value=f"Server: `{server_ip}:{server_port}` (Server #{server_num})\n"
                       f"Password: `{config.server_password or 'Ingen'}`",
                 inline=False
             )
@@ -333,12 +428,14 @@ class CS2ServerManager:
                 logger.info(f'⏰ Väntar {delay}s innan server shutdown...')
                 await asyncio.sleep(delay)
             
-            client = self.active_servers.get(match_id)
-            if not client:
+            server_info = self.active_servers.get(match_id)
+            if not server_info:
                 logger.warning(f'Ingen aktiv server för match {match_id}')
                 return
             
-            logger.info(f'🔴 Stänger ner server för match {match_id}')
+            client, server_num = server_info
+            
+            logger.info(f'🔴 Stänger ner Server {server_num} för match {match_id}')
             
             # Skicka varning till spelare först
             await client.send_command('say "Server stängs ner om 30 sekunder..."')
@@ -349,7 +446,6 @@ class CS2ServerManager:
             
             # Uppdatera log
             async with async_session() as session:
-                from sqlalchemy import select
                 result = await session.execute(
                     select(MatchServerLog).where(MatchServerLog.match_id == match_id)
                 )
@@ -358,10 +454,13 @@ class CS2ServerManager:
                     log.server_stopped_at = datetime.utcnow()
                     await session.commit()
             
+            # Frigör server
+            await self.release_server(match_id, server_num)
+            
             # Ta bort från active servers
             del self.active_servers[match_id]
             
-            logger.info(f'✅ Server shutdown komplett för match {match_id}')
+            logger.info(f'✅ Server {server_num} shutdown komplett för match {match_id}')
         
         except Exception as e:
             logger.error(f'Fel vid server shutdown: {e}', exc_info=True)
