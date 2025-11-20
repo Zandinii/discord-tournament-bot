@@ -29,8 +29,9 @@ class Guild(Base):
     tournament_channel_id = Column(Integer, nullable=True)
     lobby_voice_channel_id = Column(Integer, nullable=True)
     notification_role_id = Column(Integer, nullable=True)
-    created_at = Column(DateTime, default=datetime)
+    admin_role_id = Column(Integer, nullable=True)
     moderation_channel_id = Column(Integer, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
     
     def __repr__(self):
         return f"<Guild(guild_id={self.guild_id})>"

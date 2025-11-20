@@ -23,13 +23,29 @@ class TeamInviteView(discord.ui.View):
         self.inviter_id = inviter_id
         self.invited_id = invited_id
     
+
     @discord.ui.button(label='Acceptera ✅', style=discord.ButtonStyle.green)
     async def accept_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Acceptera inbjudan"""
+        from utils.steamid_helpers import has_linked_steamid
         
         if interaction.user.id != self.invited_id:
             await interaction.response.send_message(
                 embed=create_error_embed('Denna inbjudan är inte till dig!'),
+                ephemeral=True
+            )
+            return
+        
+        # ⭐ NYTT: KOLLA STEAMID INNAN ACCEPT
+        has_steamid = await has_linked_steamid(interaction.user.id)
+        if not has_steamid:
+            await interaction.response.send_message(
+                embed=create_error_embed(
+                    '❌ Du måste länka ditt SteamID innan du kan gå med i ett lag!\n\n'
+                    '🎮 Använd `/steam-link` för att länka ditt SteamID64.\n'
+                    'Hitta ditt SteamID på: https://steamid.io/\n\n'
+                    '💡 **Varför?** Alla lagmedlemmar måste ha länkat SteamID för att kunna delta i turneringar.'
+                ),
                 ephemeral=True
             )
             return
@@ -97,7 +113,7 @@ class TeamInviteView(discord.ui.View):
                     embed=create_error_embed(f'Kunde inte gå med i laget: {str(e)}'),
                     ephemeral=True
                 )
-    
+
     @discord.ui.button(label='Avvisa ❌', style=discord.ButtonStyle.red)
     async def deny_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Avvisa inbjudan"""

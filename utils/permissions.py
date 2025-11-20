@@ -3,17 +3,26 @@ from functools import wraps
 from database.database import async_session
 from database.models import Guild
 
-TOURNAMENT_ADMIN_ROLE_NAME = "Tournament Admin"
-
 async def has_tournament_admin_role(interaction: discord.Interaction) -> bool:
-    """Kolla om användare har Tournament Admin rollen"""
+    """
+    Kolla om användare har Tournament Admin rättigheter
+    Returnerar True om användaren har:
+    1. Administrator Discord-permission, ELLER
+    2. Den specifika admin-rollen som är konfigurerad för servern
+    """
+    # 1. Kolla Discord Administrator permission
     if interaction.user.guild_permissions.administrator:
         return True
     
-    # Kolla om användaren har Tournament Admin rollen
-    role = discord.utils.get(interaction.guild.roles, name=TOURNAMENT_ADMIN_ROLE_NAME)
-    if role and role in interaction.user.roles:
-        return True
+    # 2. Kolla specifik admin roll från databas
+    async with async_session() as session:
+        guild_config = await session.get(Guild, interaction.guild_id)
+        
+        if guild_config and guild_config.admin_role_id:
+            # Kolla om användaren har den konfigurerade admin-rollen
+            admin_role = interaction.guild.get_role(guild_config.admin_role_id)
+            if admin_role and admin_role in interaction.user.roles:
+                return True
     
     return False
 
@@ -65,17 +74,3 @@ async def can_manage_tournament(interaction: discord.Interaction, tournament) ->
         await has_tournament_admin_role(interaction) or
         interaction.user.id == tournament.created_by
     )
-
-async def setup_tournament_admin_role(guild: discord.Guild) -> discord.Role:
-    """Skapa Tournament Admin rollen om den inte finns"""
-    role = discord.utils.get(guild.roles, name=TOURNAMENT_ADMIN_ROLE_NAME)
-    
-    if not role:
-        role = await guild.create_role(
-            name=TOURNAMENT_ADMIN_ROLE_NAME,
-            color=discord.Color.gold(),
-            mentionable=True,
-            reason="Tournament Bot Admin Role"
-        )
-    
-    return role

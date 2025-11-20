@@ -168,11 +168,13 @@ class PlayerCog(commands.Cog):
                     embed=create_error_embed(f'Kunde inte sätta ELO: {str(e)}'),
                     ephemeral=True
                 )
-    
+                
     @app_commands.command(name="signup", description="Anmäl dig till en turnering")
     @app_commands.describe(tournament_id="Turnerings-ID")
     async def signup(self, interaction: discord.Interaction, tournament_id: int):
         """Anmäl dig till en turnering"""
+        from utils.steamid_helpers import has_linked_steamid
+        
         async with async_session() as session:
             try:
                 # Hämta turnering
@@ -196,6 +198,19 @@ class PlayerCog(commands.Cog):
                 if tournament.status != TournamentStatus.SIGNUP:
                     await interaction.response.send_message(
                         embed=create_error_embed('Anmälan är stängd för denna turnering!'),
+                        ephemeral=True
+                    )
+                    return
+                
+                # ⭐ NYTT: KOLLA OM ANVÄNDAREN HAR LÄNKAT STEAMID FÖRST
+                has_steamid = await has_linked_steamid(interaction.user.id)
+                if not has_steamid:
+                    await interaction.response.send_message(
+                        embed=create_error_embed(
+                            '❌ Du måste länka ditt SteamID först!\n\n'
+                            '🎮 Använd `/steam-link` för att länka ditt SteamID64.\n'
+                            'Hitta ditt SteamID på: https://steamid.io/'
+                        ),
                         ephemeral=True
                     )
                     return
@@ -292,7 +307,7 @@ class PlayerCog(commands.Cog):
                     embed=create_error_embed(f'Kunde inte anmäla dig: {str(e)}'),
                     ephemeral=True
                 )
-    
+
     @app_commands.command(name="withdraw", description="Dra dig ur en turnering")
     @app_commands.describe(tournament_id="Turnerings-ID")
     async def withdraw(self, interaction: discord.Interaction, tournament_id: int):

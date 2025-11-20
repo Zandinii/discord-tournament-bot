@@ -141,6 +141,7 @@ class SignupView(discord.ui.View):
     @discord.ui.button(label='Anmäl dig ✅', style=discord.ButtonStyle.green, custom_id='signup_button')
     async def signup_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         from database.models import TournamentParticipant, ParticipantType, Player, Team, TeamMember
+        from utils.steamid_helpers import has_linked_steamid, check_team_steamids
         
         async with async_session() as session:
             try:
@@ -158,6 +159,19 @@ class SignupView(discord.ui.View):
                 if tournament.status != TournamentStatus.SIGNUP:
                     await interaction.response.send_message(
                         embed=create_error_embed('Anmälan är stängd för denna turnering!'),
+                        ephemeral=True
+                    )
+                    return
+                
+                # ⭐ NYTT: KOLLA STEAMID FÖRST (innan ELO check)
+                has_steamid = await has_linked_steamid(interaction.user.id)
+                if not has_steamid:
+                    await interaction.response.send_message(
+                        embed=create_error_embed(
+                            '❌ Du måste länka ditt SteamID först!\n\n'
+                            '🎮 Använd `/steam-link` för att länka ditt SteamID64.\n'
+                            'Hitta ditt SteamID på: https://steamid.io/'
+                        ),
                         ephemeral=True
                     )
                     return
@@ -221,6 +235,21 @@ class SignupView(discord.ui.View):
                     if team.captain_id != interaction.user.id:
                         await interaction.response.send_message(
                             embed=create_error_embed('Endast captain kan anmäla laget till turneringar!'),
+                            ephemeral=True
+                        )
+                        return
+                    
+                    # ⭐ NYTT: KOLLA ATT ALLA I LAGET HAR STEAMID
+                    all_have_steamid, missing_users = await check_team_steamids(team.id)
+                    
+                    if not all_have_steamid:
+                        missing_mentions = ' '.join([f'<@{uid}>' for uid in missing_users])
+                        await interaction.response.send_message(
+                            embed=create_error_embed(
+                                f'❌ Alla lagmedlemmar måste länka sitt SteamID först!\n\n'
+                                f'**Saknar SteamID:** {missing_mentions}\n\n'
+                                f'De måste använda `/steam-link` för att länka sitt SteamID64.'
+                            ),
                             ephemeral=True
                         )
                         return
@@ -603,6 +632,57 @@ class AdminCog(commands.Cog):
                 logger.error(f'Fel vid setup: {e}', exc_info=True)
                 await interaction.response.send_message(
                     embed=create_error_embed(f'Kunde inte slutföra setup: {str(e)}'),
+                    ephemeral=True
+                )
+
+    
+    @app_commands.command(name="set-admin-role", description="[ADMIN] Sätt vilken roll som har admin-rättigheter")
+    @app_commands.describe(role="Discord-rollen som ska ha Tournament Admin rättigheter")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def set_admin_role(
+        self,
+        interaction: discord.Interaction,
+        role: discord.Role
+    ):
+        """Sätt Tournament Admin roll"""
+        
+        async with async_session() as session:
+            try:
+                # Hämta eller skapa guild config
+                guild = await session.get(Guild, interaction.guild_id)
+                
+                if not guild:
+                    guild = Guild(guild_id=interaction.guild_id)
+                    session.add(guild)
+                
+                # Uppdatera admin role
+                guild.admin_role_id = role.id
+                await session.commit()
+                
+                embed = discord.Embed(
+                    title="✅ Admin Roll Konfigurerad!",
+                    description=f"Användare med {role.mention} har nu Tournament Admin rättigheter.",
+                    color=discord.Color.green(),
+                    timestamp=datetime.utcnow()
+                )
+                
+                embed.add_field(
+                    name="ℹ️ Vem har admin-rättigheter?",
+                    value="• Användare med Discord **Administrator** permission\n"
+                        f"• Användare med {role.mention} rollen",
+                    inline=False
+                )
+                
+                embed.set_footer(text="Dessa användare kan nu använda alla admin-kommandon")
+                
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+                
+                logger.info(f'{interaction.user.name} satte admin roll till {role.name} för guild {interaction.guild_id}')
+                
+            except Exception as e:
+                logger.error(f'Fel vid setting av admin roll: {e}', exc_info=True)
+                await interaction.response.send_message(
+                    embed=create_error_embed(f'Kunde inte sätta admin roll: {str(e)}'),
                     ephemeral=True
                 )
 

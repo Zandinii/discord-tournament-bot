@@ -7,7 +7,7 @@ import aiohttp
 import asyncio
 import logging
 from typing import Optional, Dict, Any, List
-from asyncio import Throttler
+from asyncio_throttle import Throttler
 
 logger = logging.getLogger('TournamentBot.Pterodactyl')
 
