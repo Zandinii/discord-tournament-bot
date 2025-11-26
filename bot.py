@@ -6,6 +6,8 @@ import logging
 import sys
 from utils.scheduler import start_scheduler, stop_scheduler
 from utils.tournament_scheduler import start_tournament_scheduler, stop_tournament_scheduler
+from aiohttp import web
+import asyncio
 
 # Fix for Windows console encoding (Support emojis without issues)
 if sys.platform == "win32":
@@ -39,6 +41,25 @@ intents.voice_states = True
 
 bot = commands.Bot(command_prefix='!', intents=intents)
 
+async def handle_root(request):
+    return web.Response(text="Bot is running.")
+
+async def handle_health(request):
+    bot_status = str(bot.user) if bot.user else "Not ready!"
+    return web.json_response({"status": "healthy", "bot": bot_status})
+
+async def run_web_server():
+    """Run aiohttp web server for health checks."""
+    app = web.Application()
+    app.router.add_get('/', handle_root)
+    app.router.add_get('/health', handle_health)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    port = int(os.getenv('PORT', 10000))
+    site = web.TCPSite(runner, '0.0.0.0', port)
+    await site.start()
+    logger.info(f"✅ Web server running on port {port}")
+
 async def load_extensions():
     extensions = ['cogs.admin', 'cogs.player', 'cogs.tournament', 
                   'cogs.match', 'cogs.voice', 'cogs.team', 'cogs.help', 'cogs.season',
@@ -57,6 +78,9 @@ async def on_ready():
     logger.info(f'Bot ID: {bot.user.id}')
     logger.info(f'Discord.py version: {discord.__version__}')
     logger.info(f'Ansluten till {len(bot.guilds)} servrar')
+
+    # Start web server for health checks
+    asyncio.create_task(run_web_server())
 
     # Intialize database
     from database.database import init_db
