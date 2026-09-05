@@ -1,13 +1,13 @@
-# 🏆 Discord Turnerings Bot
+# Discord Turnerings Bot
 
 En komplett turnerings-bot för Discord communities som automatiserar hela turneringsflödet från anmälan till vinnare-kröning med ett rikt utbud av funktioner och skräddarsydd ELO-baserad ranking.
 
 ![Python](https://img.shields.io/badge/python-3.11+-blue.svg)
 ![Discord.py](https://img.shields.io/badge/discord.py-2.3+-blue.svg)
 
-## ✨ Features
+## Features
 
-### 🎮 Turnerings-System
+### Turnerings-System
 
 - **Flera spellägen**: 1v1, 2v2, 5v5
 - **Bracket-typer**: Single Elimination, Round Robin
@@ -15,14 +15,14 @@ En komplett turnerings-bot för Discord communities som automatiserar hela turne
 - **Map ban system**: CS2-stil map picks & bans
 - **Automatisk bracket**: Generering och progression
 
-### 🎙️ Voice Management
+### Voice Management
 
 - **Auto voice channels**: Skapas automatiskt per match
 - **Auto-flytt**: Spelare flyttas automatiskt vid match-start
 - **Auto-cleanup**: Channels raderas efter match
 - **Text channels**: För varje team med map ban interface
 
-### 📊 Statistik & Ranking
+### Statistik & Ranking
 
 - **ELO system**: K-factor baserat på experience
 - **Säsonger**: Resettable seasons med leaderboards
@@ -30,27 +30,27 @@ En komplett turnerings-bot för Discord communities som automatiserar hela turne
 - **Achievements**: 12+ unlockable achievements
 - **Leaderboards**: Real-time rankings
 
-### 👥 Lag-System
+### Lag-System
 
 - **Permanent teams**: Lag som består mellan turneringar
 - **Team ELO**: Baserat på medlemmars genomsnitt
 - **Invite system**: Med accept/deny buttons
 - **Captain roles**: Special permissions för captains
 
-### 🔔 Notifikationer
+### Notifikationer
 
 - **Auto-reminders**: 24h, 1h, 5min före turnering
 - **Match notifications**: När din match startar
 - **Achievement notifications**: När du unlocking achievements
 
-### 🏅 Achievements
+### Achievements
 
 - First Blood, Champion, Hot Streak, Unstoppable
 - Rising Star, Elite, Grandmaster
 - Veteran, Tournament Regular, Triple Crown
 - Underdog victories
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Prerequisites
 
@@ -147,7 +147,7 @@ python bot.py
 /team-list
 ```
 
-## 🏗️ Projektstruktur
+## Projektstruktur
 
 ```
 discord-tournament-bot/
@@ -179,7 +179,7 @@ discord-tournament-bot/
     └── CONTRIBUTING.md
 ```
 
-## 🔧 Configuration
+## Configuration
 
 ### Environment Variables (.env file)
 
@@ -191,7 +191,7 @@ DATABASE_URL=sqlite+aiosqlite:///tournament.db
 # DATABASE_URL=postgresql+asyncpg://user:pass@localhost/dbname
 ```
 
-## 📊 Database Schema
+## Database Schema
 
 Huvudtabeller:
 
@@ -208,67 +208,6 @@ Huvudtabeller:
 - `map_bans` - Map ban history
 - `tournament_templates` - Auto-scheduling
 
-## 🚀 Deployment
-
-### Oracle Cloud (Gratis)
-
-Full guide: [deployment-instructions.md](#)
-
-```bash
-# SSH till server
-ssh -i key.pem ubuntu@your-ip
-
-# Clone & setup
-git clone [repo]
-cd discord-tournament-bot
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-
-# Setup systemd service
-sudo cp tournament-bot.service /etc/systemd/system/
-sudo systemctl enable tournament-bot
-sudo systemctl start tournament-bot
-```
-
-## 🧪 Testing
-
-Full testguide: `test-guide.md`
-
-```bash
-# Run basic tests
-python bot.py
-
-# Check logs
-tail -f bot.log
-```
-
-## 📈 Performance
-
-- Memory: ~200-400MB
-- CPU: <10% idle, <50% under load
-- Response time: <2s för alla commands
-- Supports: 100+ concurrent users
-
-## 📝 Documentation
-
-- [API Reference](docs/api-reference.md) - Alla commands & functions
-- [Testing Guide](docs/test-guide.md) - Komplett testning
-
-## 🐛 Bug Reports
-
-[Skapa ett issue](https://github.com/yourusername/repo/issues) med:
-
-- Beskrivning
-- Steg för att reproducera
-- Förväntad vs faktisk behavior
-- Logs
-- Environment info
-
 ## 📄 License
 
 Ingen användning av koden eller dess delar får ske i personliga eller kommersiella syften utan uttryckligt tillstånd från upphovsmannen.
-
-## 📞 Support
-
-- Discord: @Zandinii
