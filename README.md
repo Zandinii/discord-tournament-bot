@@ -89,7 +89,7 @@ python bot.py
 3. Permissions: Administrator (eller specific permissions)
 4. Invite bot med OAuth2 URL
 
-## 📖 Usage
+## Usage
 
 ### För Admins
 
@@ -208,6 +208,6 @@ Huvudtabeller:
 - `map_bans` - Map ban history
 - `tournament_templates` - Auto-scheduling
 
-## 📄 License
+## License
 
 Ingen användning av koden eller dess delar får ske i personliga eller kommersiella syften utan uttryckligt tillstånd från upphovsmannen.
